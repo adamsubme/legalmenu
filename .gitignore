@@ -7,9 +7,6 @@ exec-approvals.json
 gogcli-config/
 identity/
 .notion_token
-agents/*/agent/auth-profiles.json
-agents/*/agent/auth.json
-agents/*/agent/models.json
 
 # Binaries
 gog
@@ -25,8 +22,11 @@ update-check.json
 skills/
 cron/
 telegram/
+agents/*/agent/auth-profiles.json
+agents/*/agent/auth.json
+agents/*/agent/models.json
 
-# Config backups
+# Old config backups
 openclaw.json.bak*
 openclaw.json.backup
 openclaw.json.save
@@ -37,24 +37,9 @@ openclaw.json.before*
 openclaw.json.doctor*
 openclaw.new.json
 
-# Old workspaces (not legal team)
+# Old workspaces & agents (non-legal)
 workspace/
 workspace-*/
-
-# Old non-legal agent identities
-IDENTITY-*.txt
-SOUL-*.txt
-
-# Build artifacts & archives
-*.tar.gz
-node_modules/
-.next/
-dist/
-
-# Agent workspaces (runtime data)
-agents/*/workspace/
-
-# Old agents from previous installation
 agents/bd/
 agents/bull/
 agents/cfo/
@@ -66,9 +51,44 @@ agents/main/
 agents/orch/
 agents/strateg/
 agents/ziutek/
+IDENTITY-*.txt
+SOUL-*.txt
 
-# Backup directories
+# Build artifacts
+*.tar.gz
+node_modules/
+.next/
+dist/
+dashboard/package-lock.json
+
+# Agent runtime workspaces
+agents/*/workspace/
+agents-legal/*/workspace/
+
+# Old intermediate dev files
+mc-v2/
+v3/
+v3-edit/
+v3-fix/
+auth/
+projects/
+ai-governance/
+
+# Scripts (deployed on VPS, not needed in repo)
+archive-done-tasks.py
+deploy-agents*.sh
+deploy-dashboard.sh
+deploy-infra.sh
+entrypoint.sh
+gogcli-init.sh
+healthcheck.py
+update-config.py
+shared-BOOTSTRAP.md
+
+# Backups
 backups/
 
 # Logs
 *.log
+*.bak
+.DS_Store
