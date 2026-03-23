@@ -1,0 +1,555 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.12",
+    "lastTouchedAt": "2026-02-27T16:47:05.657Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-02-13T18:24:34.664Z",
+    "lastRunVersion": "2026.2.12",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "auth": {
+    "profiles": {
+      "google:default": {
+        "provider": "google",
+        "mode": "api_key"
+      },
+      "z.ai:default": {
+        "provider": "z.ai",
+        "mode": "api_key"
+      },
+      "minimax:default": {
+        "provider": "minimax",
+        "mode": "api_key"
+      }
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "z.ai": {
+        "baseUrl": "https://api.z.ai/api/paas/v4",
+        "apiKey": "0206006c38144ac7bfde196feaf6d418.ppATcue6xetxrBA9",
+        "auth": "api-key",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "glm-5",
+            "name": "GLM 5",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "glm-4.7",
+            "name": "GLM 4.7",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          }
+        ]
+      },
+      "minimax": {
+        "baseUrl": "https://api.minimax.io/v1",
+        "apiKey": "sk-cp-J6qwQjkuP1BsW5idnL0tGovklI_TSlP81s-VKWRceAqkwMdcdIJyrlZDj2KMd0CHP-EPhYhVlzsxtRMNig1Z0zztGEUZnBmZrLVPZ2Oy4AirU6e4Z34zqWI",
+        "auth": "api-key",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "MiniMax-M2.5",
+            "name": "MiniMax M2.5",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 245760,
+            "maxTokens": 8192
+          },
+          {
+            "id": "MiniMax-M2.1",
+            "name": "MiniMax M2.1",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1048576,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "minimax/MiniMax-M2.5",
+        "fallbacks": [
+          "google-gemini-cli/gemini-3-pro-preview",
+          "z.ai/glm-5",
+          "z.ai/glm-4.7"
+        ]
+      },
+      "models": {
+        "minimax/MiniMax-M2.5": {
+          "alias": "genius"
+        },
+        "z.ai/glm-5": {
+          "alias": "reasoning"
+        },
+        "z.ai/glm-4.7": {
+          "alias": "glm"
+        },
+        "google-gemini-cli/gemini-3-pro-preview": {
+          "alias": "gemini"
+        }
+      },
+      "workspace": "/home/node/.openclaw/workspace",
+      "memorySearch": {
+        "enabled": true
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "thinkingDefault": "low",
+      "maxConcurrent": 6,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "name": "Bull",
+        "model": "minimax/MiniMax-M2.5",
+        "subagents": {
+          "allowAgents": [
+            "strateg",
+            "ziutek",
+            "bd",
+            "cmo",
+            "hr",
+            "cfo",
+            "cpo"
+          ]
+        }
+      },
+      {
+        "id": "strateg",
+        "name": "Eagle",
+        "workspace": "/home/node/.openclaw/workspace-strateg",
+        "agentDir": "/home/node/.openclaw/agents/strateg/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "ziutek",
+        "name": "Fox",
+        "workspace": "/home/node/.openclaw/workspace-ziutek",
+        "agentDir": "/home/node/.openclaw/agents/ziutek/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "bd",
+        "name": "Wolf",
+        "workspace": "/home/node/.openclaw/workspace-bd",
+        "agentDir": "/home/node/.openclaw/agents/bd/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "cmo",
+        "name": "Cheetah",
+        "workspace": "/home/node/.openclaw/workspace-cmo",
+        "agentDir": "/home/node/.openclaw/agents/cmo/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "hr",
+        "name": "Owl",
+        "workspace": "/home/node/.openclaw/workspace-hr",
+        "agentDir": "/home/node/.openclaw/agents/hr/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "cfo",
+        "name": "Lynx",
+        "workspace": "/home/node/.openclaw/workspace-cfo",
+        "agentDir": "/home/node/.openclaw/agents/cfo/agent",
+        "model": "minimax/MiniMax-M2.5"
+      },
+      {
+        "id": "cpo",
+        "name": "Beaver",
+        "workspace": "/home/node/.openclaw/workspace-cpo",
+        "agentDir": "/home/node/.openclaw/agents/cpo/agent",
+        "model": "minimax/MiniMax-M2.5"
+      }
+    ]
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "provider": "brave",
+        "apiKey": "BSA7h5qx7T-HPEoHI0XgZ9ZGOsJo_7B",
+        "maxResults": 5,
+        "timeoutSeconds": 30
+      }
+    },
+    "agentToAgent": {
+      "enabled": true
+    }
+  },
+  "bindings": [
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "default"
+      }
+    },
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "telegram",
+        "accountId": "byk"
+      }
+    },
+    {
+      "agentId": "hr",
+      "match": {
+        "channel": "telegram",
+        "accountId": "magic"
+      }
+    },
+    {
+      "agentId": "bd",
+      "match": {
+        "channel": "telegram",
+        "accountId": "max"
+      }
+    },
+    {
+      "agentId": "ziutek",
+      "match": {
+        "channel": "telegram",
+        "accountId": "ziutek"
+      }
+    },
+    {
+      "agentId": "cmo",
+      "match": {
+        "channel": "telegram",
+        "accountId": "wito"
+      }
+    },
+    {
+      "agentId": "strateg",
+      "match": {
+        "channel": "telegram",
+        "accountId": "eagle"
+      }
+    },
+    {
+      "agentId": "cfo",
+      "match": {
+        "channel": "telegram",
+        "accountId": "lynx"
+      }
+    },
+    {
+      "agentId": "cpo",
+      "match": {
+        "channel": "telegram",
+        "accountId": "beaver"
+      }
+    }
+  ],
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "boot-md": {},
+        "session-memory": {},
+        "command-logger": {}
+      }
+    }
+  },
+  "channels": {
+    "whatsapp": {
+      "accounts": {
+        "default": {
+          "dmPolicy": "allowlist",
+          "allowFrom": [
+            "48883537803",
+            "34678067148",
+            "971562177615",
+            "971527281984",
+            "48517323352",
+            "48666666529",
+            "971585694466",
+            "48692001009",
+            "12107109911",
+            "48606291123",
+            "48531288287",
+            "48536745038",
+            "48609111194",
+            "48536236562",
+            "48508040140",
+            "48666600279",
+            "48665422626",
+            "48509079990",
+            "48602109622",
+            "48730129811"
+          ],
+          "groupPolicy": "allowlist",
+          "debounceMs": 0
+        }
+      },
+      "dmPolicy": "allowlist",
+      "groupPolicy": "allowlist",
+      "mediaMaxMb": 50,
+      "debounceMs": 0
+    },
+    "telegram": {
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "streamMode": "partial",
+      "accounts": {
+        "byk": {
+          "dmPolicy": "allowlist",
+          "botToken": "8404665212:AAGdGynBrmKJDG5MvaT2s8i0vB6rnD2WcTw",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "magic": {
+          "dmPolicy": "allowlist",
+          "botToken": "8509914569:AAGQXL-32N8Pezh28uos1stuDhMT2qUgy-M",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "max": {
+          "dmPolicy": "allowlist",
+          "botToken": "8427911321:AAEetqk07dpzGTxpKQtGp1c4mkvNtFtL1wo",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "ziutek": {
+          "dmPolicy": "allowlist",
+          "botToken": "8320531964:AAH51liDLrLbfhDs41E3k5cK7r4hoCnz19Y",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "wito": {
+          "dmPolicy": "allowlist",
+          "botToken": "8552516880:AAFn-0aMSxU5PFljcprmUlCgXoX0PhIXu94",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "eagle": {
+          "dmPolicy": "allowlist",
+          "botToken": "8568678589:AAGXV7YVd93RRUmA1s4c1j9nv3LFIeauxQY",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "lynx": {
+          "dmPolicy": "allowlist",
+          "botToken": "8534829395:AAEKFZJpQUJutKwjZQZO7iXuf2TxGWAf5bc",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        },
+        "beaver": {
+          "dmPolicy": "allowlist",
+          "botToken": "8259448131:AAGfFHmVcYWu1uuwGaJp5K4pQR3c3twt0oc",
+          "allowFrom": [
+            1062587036
+          ],
+          "groupPolicy": "allowlist",
+          "streamMode": "partial",
+          "actions": {
+            "reactions": true,
+            "sendMessage": true,
+            "sticker": true
+          }
+        }
+      }
+    }
+  },
+  "talk": {
+    "apiKey": "sk_31545161e256d0a99f73b9769284787d2dfb6bdb5bfa4e96"
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "controlUi": {
+      "dangerouslyDisableDeviceAuth": true
+    },
+    "auth": {
+      "mode": "token",
+      "token": "d05f2cc9e327e7e655b627b5d4675b46aa95a82c704116a0eca81a3d3cd85a6b"
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "remote": {
+      "token": ""
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record"
+      ]
+    }
+  },
+  "skills": {
+    "allowBundled": [
+      "*"
+    ],
+    "install": {
+      "nodeManager": "npm"
+    },
+    "entries": {
+      "nano-banana-pro": {
+        "enabled": true,
+        "apiKey": "AIzaSyCxSiH9QC-b2HeRdl-pLEUOy-w62r6ACCI"
+      },
+      "notion": {
+        "enabled": true,
+        "apiKey": "ntn_e8908054640w05LeB5PYJ86GQAbbOlch6Fy96kRMRNe2bV"
+      },
+      "sag": {
+        "enabled": true,
+        "apiKey": "sk_31545161e256d0a99f73b9769284787d2dfb6bdb5bfa4e96"
+      },
+      "brave-search": {
+        "enabled": true,
+        "apiKey": "BSA7h5qx7T-HPEoHI0XgZ9ZGOsJo_7B"
+      },
+      "gog": {
+        "enabled": true
+      },
+      "apollo": {
+        "enabled": true,
+        "apiKey": "yIWirFSTSWRFVyZUCpZxvA"
+      },
+      "google-places": {
+        "enabled": true,
+        "apiKey": "AIzaSyAdH_iVC7TYuQ_TPmT9RkpPLnYyu1YXaJI"
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "telegram": {
+        "enabled": false
+      },
+      "whatsapp": {
+        "enabled": false
+      },
+      "google-gemini-cli-auth": {
+        "enabled": true
+      }
+    }
+  }
+}

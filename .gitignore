@@ -1,0 +1,74 @@
+# Secrets & credentials
+.env
+.env.*
+credentials/
+devices/
+exec-approvals.json
+gogcli-config/
+identity/
+.notion_token
+agents/*/agent/auth-profiles.json
+agents/*/agent/auth.json
+agents/*/agent/models.json
+
+# Binaries
+gog
+
+# OpenClaw runtime
+memory/
+media/
+completions/
+subagents/
+browser/
+canvas/
+update-check.json
+skills/
+cron/
+telegram/
+
+# Config backups
+openclaw.json.bak*
+openclaw.json.backup
+openclaw.json.save
+openclaw.json.BAK*
+openclaw.json.BROKEN*
+openclaw.json.PRE*
+openclaw.json.before*
+openclaw.json.doctor*
+openclaw.new.json
+
+# Old workspaces (not legal team)
+workspace/
+workspace-*/
+
+# Old non-legal agent identities
+IDENTITY-*.txt
+SOUL-*.txt
+
+# Build artifacts & archives
+*.tar.gz
+node_modules/
+.next/
+dist/
+
+# Agent workspaces (runtime data)
+agents/*/workspace/
+
+# Old agents from previous installation
+agents/bd/
+agents/bull/
+agents/cfo/
+agents/cmo/
+agents/cpo/
+agents/fox/
+agents/hr/
+agents/main/
+agents/orch/
+agents/strateg/
+agents/ziutek/
+
+# Backup directories
+backups/
+
+# Logs
+*.log
