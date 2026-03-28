@@ -61,7 +61,6 @@ SOUL-*.txt
 node_modules/
 .next/
 dist/
-dashboard/package-lock.json
 
 # Agent runtime workspaces
 agents/*/workspace/
@@ -97,4 +96,3 @@ backups/
 
 # Server configuration (use ecosystem.config.js.example as template)
 ecosystem.config.js
-tsconfig.tsbuildinfo
