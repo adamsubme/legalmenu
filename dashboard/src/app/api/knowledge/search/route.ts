@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifySession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 const VECTOR_STORE_ID = 'vs_69c069ceadc88191bbff088737bd11c3';
 
 export async function POST(request: NextRequest) {
+  const session = await verifySession(request);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
-  const { query, limit = 10 } = body;
+  const { query, limit = 10, scope, scope_id } = body;
 
   if (!query) {
     return NextResponse.json({ error: 'query required' }, { status: 400 });
@@ -18,6 +24,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const searchQuery = scope && scope_id
+      ? `[${scope}:${scope_id}] ${query}`
+      : query;
+
     const res = await fetch(`https://api.openai.com/v1/vector_stores/${VECTOR_STORE_ID}/search`, {
       method: 'POST',
       headers: {
@@ -26,7 +36,7 @@ export async function POST(request: NextRequest) {
         'OpenAI-Beta': 'assistants=v2',
       },
       body: JSON.stringify({
-        query,
+        query: searchQuery,
         max_num_results: limit,
       }),
     });

@@ -6,17 +6,21 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, run } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
 import { broadcast } from '@/lib/events';
+import { generateId, timestamp, updateTaskStatus, updateAgentStatus, insertActivity } from '@/lib/db-helpers';
+import { AGENT_MAP } from '@/lib/utils';
 import type { Task, Agent } from '@/lib/types';
 
-const MC_TO_OPENCLAW: Record<string, string> = {
-  'Lex COO': 'lex-coo',
-  'Lex Intake': 'lex-intake',
-  'Lex Research': 'lex-research',
-  'Lex Draft': 'lex-draft',
-  'Lex Control': 'lex-control',
-  'Lex Memory': 'lex-memory',
-};
+/**
+ * Agent name to OpenClaw ID mapping
+ * Derived from AGENT_MAP in utils.ts for single source of truth
+ */
+const MC_TO_OPENCLAW: Record<string, string> = Object.fromEntries(
+  Object.entries(AGENT_MAP).map(([id, info]) => [info.name, id])
+);
 
+/**
+ * Workflow stages - which agents can be delegated to at each stage
+ */
 const WORKFLOW_STAGES: Record<string, string[]> = {
   intake: ['lex-intake', 'lex-research', 'lex-draft', 'lex-control', 'lex-memory'],
   research: ['lex-research', 'lex-draft', 'lex-control'],

@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date TEXT,
   notion_page_id TEXT,
   notion_last_synced TEXT,
+  client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -195,5 +197,34 @@ CREATE TABLE IF NOT EXISTS task_attachments (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_task ON task_attachments(task_id, created_at DESC);
+
+-- Clients table
+CREATE TABLE IF NOT EXISTS clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  telegram_id TEXT,
+  telegram_username TEXT,
+  contact_info TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_clients_telegram ON clients(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
+
+-- Projects table
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'on_hold', 'archived')),
+  client_id TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 
 `;

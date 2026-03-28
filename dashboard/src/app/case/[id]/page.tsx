@@ -49,8 +49,10 @@ export default function CaseDetailPage() {
     async function load() {
       try {
         const [tRes, actRes, attRes, delRes] = await Promise.all([
-          fetch(`/api/tasks/${id}`), fetch(`/api/tasks/${id}/activities`),
-          fetch(`/api/tasks/${id}/attachments`), fetch(`/api/tasks/${id}/deliverables`),
+          fetch(`/api/tasks/${id}`, { credentials: 'include' }), 
+          fetch(`/api/tasks/${id}/activities`, { credentials: 'include' }),
+          fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' }), 
+          fetch(`/api/tasks/${id}/deliverables`, { credentials: 'include' }),
         ]);
         if (tRes.ok) setTask(await tRes.json());
         if (actRes.ok) setActivities(await actRes.json());
@@ -68,7 +70,7 @@ export default function CaseDetailPage() {
     if (!task?.planning_session_key) return;
     async function loadChat() {
       try {
-        const res = await fetch(`/api/openclaw/chat?sessionKey=${task!.planning_session_key}`);
+        const res = await fetch(`/api/openclaw/chat?sessionKey=${task!.planning_session_key}`, { credentials: 'include' });
         if (res.ok) { const d = await res.json(); setChatMessages(Array.isArray(d) ? d : d.messages || []); }
       } catch {}
     }
@@ -85,7 +87,12 @@ export default function CaseDetailPage() {
     if (!message.trim() || !task) return;
     setSending(true);
     try {
-      await fetch('/api/openclaw/chat/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionKey: task.planning_session_key, content: message, agentId: task.assigned_agent_id }) });
+      await fetch('/api/openclaw/chat/send', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ sessionKey: task.planning_session_key, content: message, agentId: task.assigned_agent_id }),
+        credentials: 'include',
+      });
       setMessage('');
     } catch (e) { console.error(e); }
     finally { setSending(false); }
@@ -94,7 +101,12 @@ export default function CaseDetailPage() {
   const updateTask = async (updates: Record<string, unknown>) => {
     if (!task) return;
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+      const res = await fetch(`/api/tasks/${id}`, { 
+        method: 'PATCH', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(updates),
+        credentials: 'include',
+      });
       if (res.ok) setTask(await res.json());
     } catch (e) { console.error(e); }
   };
@@ -117,9 +129,10 @@ export default function CaseDetailPage() {
       await fetch(`/api/tasks/${id}/attachments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ attachment_type: type, title, url: type === 'link' ? docUrl : undefined, content: type === 'note' ? docNote : undefined }),
+        credentials: 'include',
       });
       setDocTitle(''); setDocUrl(''); setDocNote(''); setShowAddDoc(false);
-      const res = await fetch(`/api/tasks/${id}/attachments`);
+      const res = await fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' });
       if (res.ok) setAttachments(await res.json());
     } catch (e) { console.error(e); }
   };
@@ -129,10 +142,26 @@ export default function CaseDetailPage() {
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('task_id', id);
+    formData.append('taskId', id);
     try {
-      await fetch('/api/attachments/upload', { method: 'POST', body: formData });
-      const res = await fetch(`/api/tasks/${id}/attachments`);
+      const uploadRes = await fetch('/api/attachments/upload', { method: 'POST', body: formData, credentials: 'include' });
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        await fetch(`/api/tasks/${id}/attachments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attachment_type: 'file',
+            title: file.name,
+            file_path: uploadData.file_path,
+            file_name: uploadData.file_name,
+            file_size: uploadData.file_size,
+            file_mime: uploadData.file_mime,
+          }),
+          credentials: 'include',
+        });
+      }
+      const res = await fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' });
       if (res.ok) setAttachments(await res.json());
     } catch (e) { console.error(e); }
   };

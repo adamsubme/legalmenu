@@ -99,8 +99,8 @@ export async function POST(request: NextRequest) {
     }
 
     run(
-      `INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, workspace_id, business_id, due_date, source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mc', ?, ?)`,
+      `INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, workspace_id, business_id, due_date, client_id, project_id, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mc', ?, ?)`,
       [
         id,
         body.title,
@@ -112,6 +112,8 @@ export async function POST(request: NextRequest) {
         workspaceId,
         body.business_id || 'default',
         body.due_date || null,
+        body.client_id || null,
+        body.project_id || null,
         now,
         now,
       ]

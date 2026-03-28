@@ -6,11 +6,14 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Kanban, Users, AlertTriangle, FileText,
   BookOpen, DollarSign, Settings, Scale, MessageSquare, LogOut,
+  UserCircle, FolderOpen,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Cases', href: '/cases', icon: Kanban },
+  { name: 'Clients', href: '/clients', icon: UserCircle },
+  { name: 'Projects', href: '/projects', icon: FolderOpen },
   { name: 'Agents', href: '/agents', icon: Users },
   { name: 'Escalations', href: '/escalations', icon: AlertTriangle },
   { name: 'Communications', href: '/communications', icon: MessageSquare },

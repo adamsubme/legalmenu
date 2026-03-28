@@ -233,7 +233,9 @@ export default function AgentDetailPage() {
                   <Input value={knowledgeUrl} onChange={e => setKnowledgeUrl(e.target.value)} placeholder="URL to index..." className="flex-1 h-8 text-xs" />
                   <Button size="sm" onClick={addKnowledgeLink} disabled={!knowledgeUrl}><Plus className="h-3 w-3 mr-1" />Add</Button>
                 </div>
-                <p className="text-xs text-zinc-500">Links will be tagged with this agent's ID and added to the knowledge base for vector indexing.</p>
+                <p className="text-xs text-zinc-500">
+                  Links will be tagged with this agent&apos;s ID and added to the knowledge base for vector indexing.
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { timeAgo } from '@/lib/utils';
 import { BookOpen, Search, Upload, Plus, Trash2, Link2, FileText, Database, RefreshCw } from 'lucide-react';
-import type { KnowledgeEntry } from '@/lib/types-v3';
+import type { KnowledgeEntry } from '@/lib/types';
 
 export default function KnowledgePage() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
@@ -26,7 +26,7 @@ export default function KnowledgePage() {
 
   async function loadEntries() {
     try {
-      const res = await fetch('/api/knowledge');
+      const res = await fetch('/api/knowledge', { credentials: 'include' });
       if (res.ok) setEntries(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -39,6 +39,7 @@ export default function KnowledgePage() {
       const res = await fetch('/api/knowledge/search', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: searchQuery, limit: 10 }),
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -54,6 +55,7 @@ export default function KnowledgePage() {
       await fetch('/api/knowledge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newEntry),
+        credentials: 'include',
       });
       setNewEntry({ title: '', source_type: 'link', source_url: '', description: '', tags: '' });
       setShowAdd(false);
@@ -67,7 +69,7 @@ export default function KnowledgePage() {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('title', file.name);
-      await fetch('/api/knowledge/upload', { method: 'POST', body: fd });
+      await fetch('/api/knowledge/upload', { method: 'POST', body: fd, credentials: 'include' });
       loadEntries();
     } catch (e) { console.error(e); }
     finally { setUploading(false); }
@@ -75,7 +77,7 @@ export default function KnowledgePage() {
 
   async function deleteEntry(id: string) {
     try {
-      await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE', credentials: 'include' });
       loadEntries();
     } catch (e) { console.error(e); }
   }

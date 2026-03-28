@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { run } from '@/lib/db';
+import { verifySession } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
 
@@ -10,6 +11,11 @@ const VECTOR_STORE_ID = 'vs_69c069ceadc88191bbff088737bd11c3';
 const UPLOAD_DIR = '/app/attachments/knowledge';
 
 export async function POST(request: NextRequest) {
+  const session = await verifySession(request);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 });
