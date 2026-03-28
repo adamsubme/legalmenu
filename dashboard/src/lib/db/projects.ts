@@ -27,9 +27,9 @@ export function listProjects(options?: {
   }
 
   if (options?.search) {
-    sql += ' AND (p.name LIKE ? OR p.description LIKE ?)';
+    sql += ' AND (p.name LIKE ? OR p.description LIKE ? OR p.tags LIKE ? OR p.project_type LIKE ?)';
     const s = `%${options.search}%`;
-    params.push(s, s);
+    params.push(s, s, s, s);
   }
 
   sql += ' ORDER BY p.created_at DESC';
@@ -62,14 +62,16 @@ export function createProject(data: CreateProjectRequest): Project {
   const now = new Date().toISOString();
 
   run(
-    `INSERT INTO projects (id, name, description, status, client_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO projects (id, name, description, status, client_id, project_type, tags, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.name,
       data.description || null,
       data.status || 'active',
       data.client_id || null,
+      data.project_type || null,
+      data.tags || null,
       now,
       now,
     ]
@@ -91,6 +93,8 @@ export function updateProject(id: string, data: UpdateProjectRequest): Project |
        description = COALESCE(?, description),
        status = COALESCE(?, status),
        client_id = COALESCE(?, client_id),
+       project_type = COALESCE(?, project_type),
+       tags = COALESCE(?, tags),
        updated_at = ?
      WHERE id = ?`,
     [
@@ -98,6 +102,8 @@ export function updateProject(id: string, data: UpdateProjectRequest): Project |
       data.description !== undefined ? data.description : null,
       data.status !== undefined ? data.status : null,
       data.client_id !== undefined ? data.client_id : null,
+      data.project_type !== undefined ? data.project_type : null,
+      data.tags !== undefined ? data.tags : null,
       now,
       id,
     ]

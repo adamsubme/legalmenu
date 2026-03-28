@@ -247,6 +247,8 @@ export interface Project {
   description?: string;
   status: ProjectStatus;
   client_id?: string;
+  project_type?: string;
+  tags?: string;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -270,6 +272,8 @@ export interface CreateProjectRequest {
   description?: string;
   status?: ProjectStatus;
   client_id?: string;
+  project_type?: string;
+  tags?: string;
 }
 
 export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {}
