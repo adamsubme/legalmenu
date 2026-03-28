@@ -19,10 +19,12 @@ export async function GET(request: NextRequest) {
         t.*,
         aa.name as assigned_agent_name,
         aa.avatar_emoji as assigned_agent_emoji,
-        ca.name as created_by_agent_name
+        ca.name as created_by_agent_name,
+        cl.name as client_name
       FROM tasks t
       LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
       LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
+      LEFT JOIN clients cl ON t.client_id = cl.id
       WHERE (t.source = 'mc' OR t.source IS NULL)
     `;
     const params: unknown[] = [];
@@ -53,9 +55,9 @@ export async function GET(request: NextRequest) {
 
     sql += ' ORDER BY t.created_at DESC';
 
-    const tasks = queryAll<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string; created_by_agent_name?: string }>(sql, params);
+    const tasks = queryAll<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string; created_by_agent_name?: string; client_name?: string }>(sql, params);
 
-    // Transform to include nested agent info
+    // Transform to include nested agent info and client_name
     const transformedTasks = tasks.map((task) => ({
       ...task,
       assigned_agent: task.assigned_agent_id
@@ -65,6 +67,7 @@ export async function GET(request: NextRequest) {
             avatar_emoji: task.assigned_agent_emoji,
           }
         : undefined,
+      client_name: (task as { client_name?: string }).client_name,
     }));
 
     return NextResponse.json(transformedTasks);
