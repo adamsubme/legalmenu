@@ -18,14 +18,70 @@ const MC_TO_OPENCLAW: Record<string, string> = Object.fromEntries(
   Object.entries(AGENT_MAP).map(([id, info]) => [info.name, id])
 );
 
+// Stage to sub_status mapping (matches cases/page.tsx)
+const STAGE_TO_SUB_STATUS: Record<string, string> = {
+  intake: 'intake',
+  research: 'research_in_progress',
+  drafting: 'drafting_in_progress',
+  review: 'needs_review',
+  client_input: 'needs_client_input',
+  done: 'approved',
+};
+
+// Sub_status to stage mapping
+const SUB_STATUS_TO_STAGE: Record<string, string> = Object.fromEntries(
+  Object.entries(STAGE_TO_SUB_STATUS).map(([stage, sub]) => [sub, stage])
+);
+
+// Get workflow stage from task
+function getTaskStage(task: Task): string {
+  // Check sub_status first
+  if (task.sub_status) {
+    const stage = SUB_STATUS_TO_STAGE[task.sub_status];
+    if (stage) return stage;
+    // Fallback patterns
+    if (task.sub_status.includes('intake')) return 'intake';
+    if (task.sub_status.includes('research')) return 'research';
+    if (task.sub_status.includes('draft')) return 'drafting';
+    if (task.sub_status.includes('review')) return 'review';
+    if (task.sub_status.includes('client') || task.sub_status.includes('waiting')) return 'client_input';
+  }
+  // Fallback to status
+  if (task.status === 'done') return 'done';
+  if (task.status === 'awaiting_approval') return 'client_input';
+  if (task.status === 'in_progress') return 'drafting';
+  return 'intake';
+}
+
 /**
- * Workflow stages - which agents can be delegated to at each stage
+ * Workflow stages - maps to Kanban columns and determines which agent handles each stage
+ * Main coordinator (lex-coo) delegates to specialist agents based on stage
  */
-const WORKFLOW_STAGES: Record<string, string[]> = {
-  intake: ['lex-intake', 'lex-research', 'lex-draft', 'lex-control', 'lex-memory'],
-  research: ['lex-research', 'lex-draft', 'lex-control'],
-  draft: ['lex-draft', 'lex-control'],
-  review: ['lex-control'],
+const WORKFLOW_STAGES: Record<string, { agents: string[]; instruction: string }> = {
+  intake: {
+    agents: ['lex-intake'],
+    instruction: 'Uporządkuj fakty sprawy, zbierz niezbędne dokumenty od klienta, stwórz strukturę zadania.'
+  },
+  research: {
+    agents: ['lex-research'],
+    instruction: 'Przeprowadź analizę prawną, znajdź relevantne przepisy, orzecznictwo i wzory.'
+  },
+  drafting: {
+    agents: ['lex-draft'],
+    instruction: 'Stwórz projekt dokumentu prawnego na podstawie researchu i instrukcji.'
+  },
+  review: {
+    agents: ['lex-control'],
+    instruction: 'Zweryfikuj formalną poprawność dokumentu, sprawdź zgodność z przepisami.'
+  },
+  client_input: {
+    agents: ['lex-coo'],
+    instruction: 'Przygotuj pytania do klienta, wyjaśnij opcje, poczekaj na decyzję.'
+  },
+  done: {
+    agents: ['lex-memory'],
+    instruction: 'Zapisz dokumenty i wnioski do bazy wiedzy, zarchiwizuj sprawę.'
+  },
 };
 
 export interface DispatchResult {
@@ -73,32 +129,49 @@ export async function dispatchTask(taskId: string): Promise<DispatchResult> {
 
   const now = new Date().toISOString();
   const priorityEmoji = { low: '🔵', normal: '⚪', high: '🟡', urgent: '🔴' }[task.priority] || '⚪';
+  
+  // Determine workflow stage and get instructions for this stage
+  const taskStage = getTaskStage(task);
+  const stageConfig = WORKFLOW_STAGES[taskStage] || WORKFLOW_STAGES.intake;
+  const specialistInstruction = stageConfig.instruction;
 
-  const workflowInstructions = openclawAgentId === 'lex-coo'
-    ? `\n\n**Workflow:**
-1. Deleguj do @lex-intake jeśli trzeba uporządkować fakty
-2. Deleguj do @lex-research dla analizy prawnej
-3. Deleguj do @lex-draft dla tworzenia dokumentów
-4. Deleguj do @lex-control dla weryfikacji formalnej
-5. Po zakończeniu — zapisz w @lex-memory i poinformuj zleceniodawcę`
-    : '';
+  // Build hierarchical context message
+  const contextMessage = `[Mission Control] ${priorityEmoji} **ZADANIE: ${task.title}**
 
-  const taskMessage = `[Mission Control] ${priorityEmoji} **NOWE ZADANIE**
-
-**Tytuł:** ${task.title}
-${task.description ? `**Opis:** ${task.description}\n` : ''}
+**Stage:** ${taskStage.toUpperCase()}
 **Priorytet:** ${task.priority}
 ${task.due_date ? `**Termin:** ${task.due_date}\n` : ''}
-**ID zadania:** ${task.id}
+${task.description ? `**Opis:** ${task.description}\n` : ''}
 
-Wykonaj zadanie zgodnie ze swoją specjalizacją.${workflowInstructions}`;
+---
 
-  const sessionKey = `agent:${openclawAgentId}:main`;
+**KONTEKST HIERARCHICZNY:**
+
+1. **Globalna baza prawna** — przepisy, wzory, orzecznictwo
+2. **Baza klienta** — dane klienta, historia współpracy
+3. **Baza projektu** — AML/KYC/MiCA/CASP, specyfika projektu
+4. **Baza sprawy** — dotychczasowe dokumenty, research, uwagi
+
+---
+
+**INSTRUKCJA NA TEN STAGE:**
+${specialistInstruction}
+
+---
+
+**Format odpowiedzi:**
+- Co wykonano na tym etapie
+- Jakie dokumenty wygenerowano / zaktualizowano
+- Co dalej — następny krok lub potrzebna decyzja
+
+**ID zadania:** ${task.id}`;
+
+  const sessionKey = `task:${task.id}:${openclawAgentId}:${taskStage}`;
 
   try {
     await client.call('chat.send', {
       sessionKey,
-      message: taskMessage,
+      message: contextMessage,
       idempotencyKey: `dispatch-${task.id}-${Date.now()}`,
     });
 
