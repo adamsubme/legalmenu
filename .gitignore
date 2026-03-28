@@ -97,3 +97,4 @@ backups/
 
 # Server configuration (use ecosystem.config.js.example as template)
 ecosystem.config.js
+tsconfig.tsbuildinfo
