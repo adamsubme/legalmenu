@@ -60,7 +60,7 @@ jobs:
 
       - uses: github/codeql-action/init@v3
         with:
-          languages: ['javascript', 'typescript']
+          languages: javascript
 
       - uses: github/codeql-action/analyze@v3
         with:
