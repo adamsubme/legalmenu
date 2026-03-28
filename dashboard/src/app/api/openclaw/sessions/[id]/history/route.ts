@@ -23,15 +23,15 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     // First get the session to find its key
-    const sessions = await client.listSessions() as unknown[];
-    const session = (sessions as Array<Record<string, unknown>>).find(s => s.sessionId === id || s.key === id);
+    const sessions = await client.listSessions() as unknown as Array<{ sessionId?: string; key?: string }>;
+    const session = sessions.find(s => s.sessionId === id || s.key === id);
     
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
     // Use getChatHistory with the session key
-    const sessionKey = (session.key as string) || id;
+    const sessionKey = session.key || id;
     const history = await client.getChatHistory(sessionKey);
     return NextResponse.json(history);
   } catch (error) {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { content, sessionKey } = body;
+    const { content, sessionKey: providedKey } = body;
 
     if (!content) {
       return NextResponse.json({ error: 'content is required' }, { status: 400 });
@@ -68,9 +68,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Find session to get its key
-    const sessions = await client.listSessions();
-    const session = sessions.find((s: { sessionId: string; key?: string }) => s.sessionId === id);
-    const key = sessionKey || session?.key || id;
+    const sessions = await client.listSessions() as unknown as Array<{ sessionId?: string; key?: string }>;
+    const session = sessions.find(s => s.sessionId === id || s.key === id);
+    const key = providedKey || session?.key || id;
 
     // Use sendMessage to send to the session
     await client.sendMessage(key, content);
