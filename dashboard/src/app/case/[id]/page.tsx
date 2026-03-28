@@ -1,73 +1,112 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { STATUS_LABELS, SUB_STATUS_LABELS, WORKFLOW_STAGES, timeAgo, formatDate } from '@/lib/utils';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { STATUS_LABELS, SUB_STATUS_LABELS, timeAgo, formatDate } from '@/lib/utils';
 import {
   ArrowLeft, Send, Clock, User, FileText, AlertTriangle, CheckCircle2,
-  XCircle, Paperclip, MessageSquare, History, Upload, Link2, StickyNote,
-  ChevronDown, ChevronUp, ExternalLink, Plus, Pencil, Check, X,
+  Upload, Link2, StickyNote, Plus, Trash2, ExternalLink, X,
+  Bot, BookOpen, Folder, Users, Briefcase, FileCheck, MessageSquare,
+  ChevronDown, Search, Globe, Scale,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Task, TaskActivity, TaskAttachment, TaskDeliverable } from '@/lib/types';
+import type { Task, TaskActivity, TaskAttachment, KnowledgeEntry } from '@/lib/types';
 
-type Tab = 'chat' | 'timeline' | 'documents' | 'deliverables';
-type TaskExt = Task & { sub_status?: string };
+type Tab = 'chat' | 'knowledge' | 'legal' | 'project' | 'client' | 'files' | 'timeline';
+
+type TaskExt = Task & {
+  sub_status?: string;
+  client_name?: string;
+  project_name?: string;
+  assigned_agent_name?: string;
+  assigned_agent_avatar?: string;
+};
+
+type FileAttachment = TaskAttachment & { url?: string };
 
 export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  
+  // Data state
   const [task, setTask] = useState<TaskExt | null>(null);
   const [activities, setActivities] = useState<TaskActivity[]>([]);
-  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-  const [deliverables, setDeliverables] = useState<TaskDeliverable[]>([]);
-  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
-  const [tab, setTab] = useState<Tab>('chat');
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
+  const [clientKnowledge, setClientKnowledge] = useState<KnowledgeEntry[]>([]);
+  const [projectKnowledge, setProjectKnowledge] = useState<KnowledgeEntry[]>([]);
+  const [globalKnowledge, setGlobalKnowledge] = useState<KnowledgeEntry[]>([]);
+  
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<{ role: string; content: string; timestamp?: number }[]>([]);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  
+  // UI state
+  const [tab, setTab] = useState<Tab>('chat');
   const [loading, setLoading] = useState(true);
-  const [descExpanded, setDescExpanded] = useState(false);
-  const [showAddDoc, setShowAddDoc] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
-  const [docUrl, setDocUrl] = useState('');
-  const [docNote, setDocNote] = useState('');
-
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [editDesc, setEditDesc] = useState('');
-
+  
+  // Form states
+  const [showAddFile, setShowAddFile] = useState(false);
+  const [showAddLink, setShowAddLink] = useState(false);
+  const [newLinkTitle, setNewLinkTitle] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [showAddKnowledge, setShowAddKnowledge] = useState(false);
+  const [kbTitle, setKbTitle] = useState('');
+  const [kbContent, setKbContent] = useState('');
+  const [kbType, setKbType] = useState<'document' | 'memo' | 'precedent'>('document');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [tRes, actRes, attRes, delRes] = await Promise.all([
-          fetch(`/api/tasks/${id}`, { credentials: 'include' }), 
-          fetch(`/api/tasks/${id}/activities`, { credentials: 'include' }),
-          fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' }), 
-          fetch(`/api/tasks/${id}/deliverables`, { credentials: 'include' }),
-        ]);
-        if (tRes.ok) setTask(await tRes.json());
-        if (actRes.ok) setActivities(await actRes.json());
-        if (attRes.ok) { const d = await attRes.json(); setAttachments(Array.isArray(d) ? d : []); }
-        if (delRes.ok) { const d = await delRes.json(); setDeliverables(Array.isArray(d) ? d : []); }
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    }
-    load();
-    const i = setInterval(load, 10000);
-    return () => clearInterval(i);
+  const loadData = useCallback(async () => {
+    try {
+      const [tRes, actRes, attRes, kbRes] = await Promise.all([
+        fetch(`/api/tasks/${id}`, { credentials: 'include' }),
+        fetch(`/api/tasks/${id}/activities`, { credentials: 'include' }),
+        fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' }),
+        fetch(`/api/knowledge?scope=task&scope_id=${id}`, { credentials: 'include' }),
+      ]);
+      
+      if (tRes.ok) {
+        const taskData = await tRes.json();
+        setTask(taskData);
+        
+        // Load client and project knowledge
+        if (taskData.client_id) {
+          const [clientKbRes, clientProjKbRes] = await Promise.all([
+            fetch(`/api/knowledge?scope=client&scope_id=${taskData.client_id}`, { credentials: 'include' }),
+            taskData.project_id 
+              ? fetch(`/api/knowledge?scope=project&scope_id=${taskData.project_id}`, { credentials: 'include' })
+              : Promise.resolve({ ok: false }),
+          ]);
+          if (clientKbRes.ok) setClientKnowledge(await clientKbRes.json());
+          if (clientProjKbRes.ok) setProjectKnowledge(await clientProjKbRes.json());
+        }
+        
+        // Load global knowledge
+        const globalKbRes = await fetch('/api/knowledge?scope=global', { credentials: 'include' });
+        if (globalKbRes.ok) setGlobalKnowledge(await globalKbRes.json());
+      }
+      
+      if (actRes.ok) setActivities(await actRes.json());
+      if (attRes.ok) { const d = await attRes.json(); setAttachments(Array.isArray(d) ? d : []); }
+      if (kbRes.ok) { const d = await kbRes.json(); setKnowledge(Array.isArray(d) ? d : []); }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }, [id]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     if (!task?.planning_session_key) return;
+    
     async function loadChat() {
       try {
         const res = await fetch(`/api/openclaw/chat?sessionKey=${task!.planning_session_key}`, { credentials: 'include' });
@@ -75,21 +114,19 @@ export default function CaseDetailPage() {
       } catch {}
     }
     loadChat();
-    const i = setInterval(loadChat, 8000);
+    const i = setInterval(loadChat, 5000);
     return () => clearInterval(i);
   }, [task?.planning_session_key]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
-  useEffect(() => { if (editingTitle && titleInputRef.current) titleInputRef.current.focus(); }, [editingTitle]);
-
   const handleSend = async () => {
-    if (!message.trim() || !task) return;
+    if (!message.trim() || !task?.planning_session_key) return;
     setSending(true);
     try {
-      await fetch('/api/openclaw/chat/send', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
+      await fetch('/api/openclaw/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionKey: task.planning_session_key, content: message, agentId: task.assigned_agent_id }),
         credentials: 'include',
       });
@@ -98,53 +135,16 @@ export default function CaseDetailPage() {
     finally { setSending(false); }
   };
 
-  const updateTask = async (updates: Record<string, unknown>) => {
-    if (!task) return;
-    try {
-      const res = await fetch(`/api/tasks/${id}`, { 
-        method: 'PATCH', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(updates),
-        credentials: 'include',
-      });
-      if (res.ok) setTask(await res.json());
-    } catch (e) { console.error(e); }
-  };
-
-  const saveTitle = async () => {
-    if (!editTitle.trim() || editTitle === task?.title) { setEditingTitle(false); return; }
-    await updateTask({ title: editTitle });
-    setEditingTitle(false);
-  };
-
-  const saveDesc = async () => {
-    await updateTask({ description: editDesc });
-    setEditingDesc(false);
-  };
-
-  const addAttachment = async (type: 'link' | 'note') => {
-    const title = docTitle || (type === 'link' ? docUrl : 'Note');
-    if (!title) return;
-    try {
-      await fetch(`/api/tasks/${id}/attachments`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attachment_type: type, title, url: type === 'link' ? docUrl : undefined, content: type === 'note' ? docNote : undefined }),
-        credentials: 'include',
-      });
-      setDocTitle(''); setDocUrl(''); setDocNote(''); setShowAddDoc(false);
-      const res = await fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' });
-      if (res.ok) setAttachments(await res.json());
-    } catch (e) { console.error(e); }
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('taskId', id);
+    
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('taskId', id);
+    
     try {
-      const uploadRes = await fetch('/api/attachments/upload', { method: 'POST', body: formData, credentials: 'include' });
+      const uploadRes = await fetch('/api/attachments/upload', { method: 'POST', body: fd, credentials: 'include' });
       if (uploadRes.ok) {
         const uploadData = await uploadRes.json();
         await fetch(`/api/tasks/${id}/attachments`, {
@@ -160,300 +160,446 @@ export default function CaseDetailPage() {
           }),
           credentials: 'include',
         });
+        loadData();
       }
-      const res = await fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' });
-      if (res.ok) setAttachments(await res.json());
     } catch (e) { console.error(e); }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400" /></div>;
-  if (!task) return <div className="flex h-screen items-center justify-center"><p className="text-zinc-500">Case not found</p></div>;
+  const handleAddLink = async () => {
+    if (!newLinkUrl) return;
+    try {
+      await fetch(`/api/tasks/${id}/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attachment_type: 'link',
+          title: newLinkTitle || newLinkUrl,
+          url: newLinkUrl,
+        }),
+        credentials: 'include',
+      });
+      setNewLinkTitle('');
+      setNewLinkUrl('');
+      setShowAddLink(false);
+      loadData();
+    } catch (e) { console.error(e); }
+  };
 
-  const stageMap: Record<string, number> = { not_started: 0, in_progress: 1, blocked: 2, awaiting_approval: 3, done: 5 };
-  const currentStage = stageMap[task.status] ?? 0;
+  const handleAddKnowledge = async () => {
+    if (!kbTitle || !kbContent) return;
+    try {
+      await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: kbTitle,
+          content: kbContent,
+          scope: 'task',
+          scope_id: id,
+          entry_type: kbType,
+        }),
+        credentials: 'include',
+      });
+      setKbTitle('');
+      setKbContent('');
+      setShowAddKnowledge(false);
+      loadData();
+    } catch (e) { console.error(e); }
+  };
 
-  const tabs: { id: Tab; label: string; icon: React.ElementType; count?: number }[] = [
-    { id: 'chat', label: 'Chat', icon: MessageSquare, count: chatMessages.length },
-    { id: 'timeline', label: 'Timeline', icon: History, count: activities.length },
-    { id: 'documents', label: 'Documents', icon: FileText, count: attachments.length },
-    { id: 'deliverables', label: 'Deliverables', icon: CheckCircle2, count: deliverables.length },
-  ];
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    try {
+      await fetch(`/api/tasks/${id}/attachments/${attachmentId}`, { method: 'DELETE', credentials: 'include' });
+      loadData();
+    } catch (e) { console.error(e); }
+  };
+
+  const priorityColors: Record<string, string> = {
+    urgent: 'bg-red-500/10 text-red-400 border-red-500/30',
+    high: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+    normal: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    low: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+  };
+
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400" /></div>;
+  }
+
+  if (!task) {
+    return <div className="p-6 text-zinc-500">Case not found</div>;
+  }
+
+  const fileAttachments = attachments.filter(a => a.attachment_type === 'file');
+  const links = attachments.filter(a => a.attachment_type === 'link');
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Top Bar */}
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-6 py-3">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/cases')}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1 min-w-0">
-          {editingTitle ? (
-            <div className="flex items-center gap-2">
-              <input
-                ref={titleInputRef}
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditingTitle(false); }}
-                className="text-lg font-semibold bg-zinc-900 border border-zinc-600 rounded-md px-2 py-0.5 text-zinc-100 flex-1 focus:border-blue-500 focus:outline-none"
-              />
-              <button onClick={saveTitle} className="text-emerald-400 hover:text-emerald-300"><Check className="h-4 w-4" /></button>
-              <button onClick={() => setEditingTitle(false)} className="text-zinc-500 hover:text-zinc-300"><X className="h-4 w-4" /></button>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="p-4 border-b border-zinc-800 bg-zinc-950/50">
+        <div className="flex items-center gap-4 mb-3">
+          <Link href="/cases">
+            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4" /></Button>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-bold truncate">{task.title}</h1>
+            <div className="flex items-center gap-3 mt-1 text-sm text-zinc-400">
+              {task.client_name && (
+                <Link href={`/clients/${task.client_id}`} className="flex items-center gap-1 hover:text-blue-400">
+                  <Users className="h-3 w-3" /> {task.client_name}
+                </Link>
+              )}
+              {task.project_name && (
+                <Link href={`/projects/${task.project_id}`} className="flex items-center gap-1 hover:text-blue-400">
+                  <Briefcase className="h-3 w-3" /> {task.project_name}
+                </Link>
+              )}
+              {task.assigned_agent && (
+                <span className="flex items-center gap-1">
+                  <Bot className="h-3 w-3" /> {task.assigned_agent.avatar_emoji} {task.assigned_agent.name}
+                </span>
+              )}
             </div>
-          ) : (
-            <div className="flex items-center gap-2 group">
-              <h1 className="text-lg font-semibold truncate">{task.title}</h1>
-              <button
-                onClick={() => { setEditTitle(task.title); setEditingTitle(true); }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-300 transition-all"
-              ><Pencil className="h-3.5 w-3.5" /></button>
-            </div>
-          )}
-          <div className="flex items-center gap-2 mt-0.5">
-            <Badge variant={task.status === 'in_progress' ? 'info' : task.status === 'blocked' ? 'destructive' : task.status === 'awaiting_approval' ? 'warning' : task.status === 'done' ? 'success' : 'secondary'}>{STATUS_LABELS[task.status]}</Badge>
-            {task.sub_status && <Badge variant="warning">{SUB_STATUS_LABELS[task.sub_status] || task.sub_status}</Badge>}
-            {task.priority !== 'normal' && <Badge variant={task.priority === 'urgent' ? 'destructive' : 'warning'}>{task.priority}</Badge>}
-            {task.assigned_agent && <span className="text-xs text-zinc-500">{(task as { assigned_agent_emoji?: string }).assigned_agent_emoji || ''} {(task as { assigned_agent_name?: string }).assigned_agent_name || task.assigned_agent.name}</span>}
-            <span className="text-xs text-zinc-600">Created {formatDate(task.created_at)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {task.priority && (
+              <Badge className={priorityColors[task.priority] || ''}>{task.priority}</Badge>
+            )}
+            <Badge variant={task.status === 'done' ? 'success' : 'secondary'}>
+              {STATUS_LABELS[task.status] || task.status}
+            </Badge>
           </div>
         </div>
+
+        {/* Tabs */}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList className="grid grid-cols-7 w-full">
+            <TabsTrigger value="chat" className="gap-1"><MessageSquare className="h-3 w-3" /> Chat</TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1"><BookOpen className="h-3 w-3" /> Case KB</TabsTrigger>
+            <TabsTrigger value="legal" className="gap-1"><Scale className="h-3 w-3" /> Legal</TabsTrigger>
+            <TabsTrigger value="project" className="gap-1"><Folder className="h-3 w-3" /> Project</TabsTrigger>
+            <TabsTrigger value="client" className="gap-1"><Users className="h-3 w-3" /> Client</TabsTrigger>
+            <TabsTrigger value="files" className="gap-1"><FileText className="h-3 w-3" /> Files ({fileAttachments.length})</TabsTrigger>
+            <TabsTrigger value="timeline" className="gap-1"><Clock className="h-3 w-3" /> Timeline</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      {/* Workflow Timeline */}
-      <div className="border-b border-zinc-800 px-6 py-3">
-        <div className="flex items-center gap-1">
-          {WORKFLOW_STAGES.map((stage, i) => (
-            <div key={stage.id} className="flex items-center flex-1">
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                i < currentStage ? 'bg-emerald-500/15 text-emerald-400' :
-                i === currentStage ? (task.status === 'blocked' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/30' : 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30') :
-                'bg-zinc-800/50 text-zinc-600'
-              }`}>
-                {i < currentStage ? <CheckCircle2 className="h-3 w-3" /> : i === currentStage && task.status === 'blocked' ? <XCircle className="h-3 w-3" /> : null}
-                {stage.label}
-              </div>
-              {i < WORKFLOW_STAGES.length - 1 && <div className={`flex-1 h-px mx-1 ${i < currentStage ? 'bg-emerald-500/30' : 'bg-zinc-800'}`} />}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Description */}
-      <div className="border-b border-zinc-800 px-6 py-3">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setDescExpanded(!descExpanded)} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
-            {descExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            <span className="font-medium">Description</span>
-            {!task.description && <span className="text-zinc-600 text-xs">(empty)</span>}
-          </button>
-          {descExpanded && !editingDesc && (
-            <button
-              onClick={() => { setEditDesc(task.description || ''); setEditingDesc(true); }}
-              className="text-zinc-600 hover:text-zinc-300 transition-colors"
-            ><Pencil className="h-3.5 w-3.5" /></button>
-          )}
-        </div>
-        {descExpanded && (
-          editingDesc ? (
-            <div className="mt-2 space-y-2">
-              <textarea
-                value={editDesc}
-                onChange={e => setEditDesc(e.target.value)}
-                className="w-full min-h-[120px] rounded-md border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-blue-500 focus:outline-none resize-y"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setEditingDesc(false)}>Cancel</Button>
-                <Button size="sm" onClick={saveDesc}><Check className="h-3 w-3 mr-1" />Save</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2 text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap pl-5">
-              {task.description || <span className="text-zinc-600 italic">No description yet. Click the edit icon to add one.</span>}
-            </div>
-          )
-        )}
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Panel */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center border-b border-zinc-800 px-6">
-            {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 transition-colors ${tab === t.id ? 'border-blue-400 text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
-                <t.icon className="h-3.5 w-3.5" />{t.label}
-                {(t.count ?? 0) > 0 && <span className="text-[10px] bg-zinc-800 rounded-full px-1.5">{t.count}</span>}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {tab === 'chat' && (
-              <div className="flex flex-col h-full">
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {chatMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                      <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
-                      <p className="text-sm">No messages in this session</p>
-                      <p className="text-xs mt-1">Send a message to start a conversation with the agent</p>
+      {/* Tab Content */}
+      <div className="flex-1 overflow-auto p-4">
+        
+        {/* Chat Tab */}
+        <TabsContent value="chat" className="h-full mt-0">
+          <Card className="h-full flex flex-col">
+            <CardContent className="flex-1 overflow-auto p-4 space-y-3">
+              {chatMessages.length === 0 ? (
+                <div className="text-center text-zinc-500 py-8">
+                  <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No messages yet. Agents will discuss this case here.</p>
+                </div>
+              ) : (
+                chatMessages.map((msg, i) => (
+                  <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
+                      msg.role === 'user' ? 'bg-blue-500/20' : msg.role === 'agent' ? 'bg-purple-500/20' : 'bg-zinc-500/20'
+                    }`}>
+                      {msg.role === 'user' ? <User className="h-4 w-4" /> : msg.role === 'agent' ? <Bot className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
                     </div>
-                  ) : chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                      {msg.role !== 'user' && <div className="h-7 w-7 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 text-xs">{msg.role === 'assistant' ? '⚖️' : '🔧'}</div>}
-                      <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
-                        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
+                    <div className={`flex-1 max-w-2xl ${msg.role === 'user' ? 'text-right' : ''}`}>
+                      <div className={`inline-block rounded-lg p-3 ${
+                        msg.role === 'user' ? 'bg-blue-500/20' : msg.role === 'agent' ? 'bg-purple-500/20' : 'bg-zinc-500/20'
+                      }`}>
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        {msg.timestamp && <p className="text-xs text-zinc-500 mt-1">{timeAgo(new Date(msg.timestamp).toISOString())}</p>}
                       </div>
                     </div>
-                  ))}
-                  <div ref={chatEndRef} />
-                </div>
-                <div className="border-t border-zinc-800 p-3">
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </CardContent>
+            
+            {/* Message Input */}
+            <div className="p-4 border-t border-zinc-800">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Send a message to agents..."
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                  className="flex-1"
+                />
+                <Button onClick={handleSend} disabled={sending || !message.trim()}>
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        {/* Case Knowledge Tab */}
+        <TabsContent value="knowledge" className="mt-0">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Case Knowledge Base</h3>
+              <Button size="sm" variant="outline" onClick={() => setShowAddKnowledge(true)}>
+                <Plus className="h-4 w-4 mr-2" />Add Entry
+              </Button>
+            </div>
+            
+            {showAddKnowledge && (
+              <Card className="border-blue-500/30 bg-blue-500/5">
+                <CardContent className="p-4 space-y-3">
                   <div className="flex gap-2">
-                    <Input value={message} onChange={e => setMessage(e.target.value)} placeholder="Message the agent..." className="flex-1" onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()} disabled={sending} />
-                    <Button onClick={handleSend} disabled={sending || !message.trim()}><Send className="h-4 w-4" /></Button>
+                    <Input placeholder="Entry title" value={kbTitle} onChange={e => setKbTitle(e.target.value)} className="flex-1" />
+                    <select value={kbType} onChange={e => setKbType(e.target.value as typeof kbType)} className="bg-zinc-900 border border-zinc-700 rounded px-2">
+                      <option value="document">Document</option>
+                      <option value="memo">Memo</option>
+                      <option value="precedent">Precedent</option>
+                    </select>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {tab === 'timeline' && (
-              <div className="p-6">
-                {activities.length === 0 ? <p className="text-sm text-zinc-500 text-center py-8">No activity yet</p> : (
-                  <div className="relative pl-6 space-y-4">
-                    <div className="absolute left-[11px] top-2 bottom-2 w-px bg-zinc-800" />
-                    {activities.map(a => (
-                      <div key={a.id} className="relative flex gap-3">
-                        <div className={`absolute left-[-17px] top-1.5 h-3 w-3 rounded-full border-2 ${
-                          a.activity_type === 'completed' ? 'border-emerald-500 bg-emerald-500/20' :
-                          a.activity_type === 'status_changed' ? 'border-blue-500 bg-blue-500/20' :
-                          'border-zinc-700 bg-zinc-900'
-                        }`} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            {a.agent && <span className="text-xs font-medium text-zinc-300">{a.agent.avatar_emoji} {a.agent.name}</span>}
-                            <Badge variant="outline" className="text-[10px]">{a.activity_type}</Badge>
-                            <span className="text-[10px] text-zinc-600 ml-auto">{formatDate(a.created_at)}</span>
-                          </div>
-                          <p className="text-sm text-zinc-400 mt-1">{a.message}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <textarea
+                    className="w-full h-24 bg-zinc-900 border border-zinc-700 rounded p-2 text-sm"
+                    placeholder="Content..."
+                    value={kbContent}
+                    onChange={e => setKbContent(e.target.value)}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setShowAddKnowledge(false)}>Cancel</Button>
+                    <Button size="sm" onClick={handleAddKnowledge}>Save</Button>
                   </div>
-                )}
-              </div>
+                </CardContent>
+              </Card>
             )}
-
-            {tab === 'documents' && (
-              <div className="p-6 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setShowAddDoc(!showAddDoc)}><Plus className="h-3.5 w-3.5" />Add</Button>
-                  <label className="cursor-pointer">
-                    <input type="file" className="hidden" onChange={handleFileUpload} />
-                    <span className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 h-8 px-3 text-xs font-medium cursor-pointer transition-colors"><Upload className="h-3.5 w-3.5" />Upload File</span>
-                  </label>
-                </div>
-
-                {showAddDoc && (
-                  <Card className="animate-slide-in">
-                    <CardContent className="p-4 space-y-3">
-                      <Input value={docTitle} onChange={e => setDocTitle(e.target.value)} placeholder="Title" className="h-8 text-xs" />
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="URL (for links)" className="h-8 text-xs" />
+            
+            {knowledge.length === 0 ? (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No case knowledge entries yet.</p>
+                <p className="text-sm mt-1">Knowledge will be generated as agents analyze the case.</p>
+              </CardContent></Card>
+            ) : (
+              <div className="grid gap-3">
+                {knowledge.map(k => (
+                  <Card key={k.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium">{k.title}</p>
+                          <Badge variant="outline" className="mt-1 text-xs">{k.entry_type}</Badge>
+                          <p className="text-sm text-zinc-400 mt-2 line-clamp-3">{k.content}</p>
                         </div>
-                        <Button size="sm" onClick={() => addAttachment('link')} disabled={!docUrl}><Link2 className="h-3.5 w-3.5" />Add Link</Button>
-                      </div>
-                      <div className="flex gap-2">
-                        <textarea value={docNote} onChange={e => setDocNote(e.target.value)} placeholder="Note content..." className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-100 min-h-[60px]" />
-                        <Button size="sm" onClick={() => addAttachment('note')} disabled={!docNote}><StickyNote className="h-3.5 w-3.5" />Add Note</Button>
                       </div>
                     </CardContent>
                   </Card>
-                )}
-
-                {attachments.length === 0 && !showAddDoc ? (
-                  <div className="text-center py-8"><FileText className="h-8 w-8 mx-auto text-zinc-600 mb-2" /><p className="text-sm text-zinc-500">No documents yet</p></div>
-                ) : attachments.map(att => (
-                  <div key={att.id} className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 hover:bg-zinc-800/50 transition-colors">
-                    {att.attachment_type === 'link' ? <Link2 className="h-4 w-4 text-blue-400 shrink-0" /> : att.attachment_type === 'note' ? <StickyNote className="h-4 w-4 text-amber-400 shrink-0" /> : <Paperclip className="h-4 w-4 text-zinc-500 shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{att.title || att.file_name}</p>
-                      <p className="text-xs text-zinc-500">{att.attachment_type}{att.file_size ? ` · ${(att.file_size / 1024).toFixed(0)}KB` : ''} · {timeAgo(att.created_at)}</p>
-                      {att.content && <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{att.content}</p>}
-                    </div>
-                    {att.url && <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300"><ExternalLink className="h-3.5 w-3.5" /></a>}
-                    <Badge variant="outline">{att.attachment_type}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {tab === 'deliverables' && (
-              <div className="p-6 space-y-3">
-                {deliverables.length === 0 ? (
-                  <div className="text-center py-8"><CheckCircle2 className="h-8 w-8 mx-auto text-zinc-600 mb-2" /><p className="text-sm text-zinc-500">No deliverables yet</p></div>
-                ) : deliverables.map(del => (
-                  <div key={del.id} className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{del.title}</p>
-                      {del.description && <p className="text-xs text-zinc-500 mt-0.5">{del.description}</p>}
-                      {del.path && <p className="text-xs font-mono text-zinc-600 mt-0.5">{del.path}</p>}
-                    </div>
-                    {del.path && del.path.includes('docs.google.com') && (
-                      <a href={del.path} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300"><ExternalLink className="h-4 w-4" /></a>
-                    )}
-                    <Badge variant="outline">{del.deliverable_type}</Badge>
-                  </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
+        </TabsContent>
 
-        {/* Right Sidebar */}
-        <div className="w-72 border-l border-zinc-800 overflow-y-auto p-4 space-y-5">
-          <div>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Status</h3>
-            <select value={task.status} onChange={e => updateTask({ status: e.target.value })} className="w-full h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-300">
-              {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+        {/* Legal Knowledge Tab */}
+        <TabsContent value="legal" className="mt-0">
+          <div className="space-y-4">
+            <h3 className="font-semibold">Relevant Legal Knowledge</h3>
+            <p className="text-sm text-zinc-400">Global legal framework, regulations, and precedents applicable to this case.</p>
+            
+            {globalKnowledge.length === 0 ? (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <Scale className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No global legal knowledge configured.</p>
+              </CardContent></Card>
+            ) : (
+              <div className="grid gap-3">
+                {globalKnowledge.map(k => (
+                  <Card key={k.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{k.title}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">{k.entry_type}</Badge>
+                        {k.tags && k.tags.split(',').map(t => <Badge key={t} variant="secondary" className="text-xs">{t.trim()}</Badge>)}
+                      </div>
+                      <p className="text-sm text-zinc-400 mt-2 line-clamp-4">{k.content}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
+        </TabsContent>
 
-          {task.status === 'blocked' && (
-            <div>
-              <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Block Reason</h3>
-              <select value={task.sub_status || ''} onChange={e => updateTask({ sub_status: e.target.value || null })} className="w-full h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-300">
-                <option value="">Not specified</option>
-                {Object.entries(SUB_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+        {/* Project Knowledge Tab */}
+        <TabsContent value="project" className="mt-0">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Project Knowledge</h3>
+              {task.project_id && <Link href={`/projects/${task.project_id}`}><Button size="sm" variant="ghost">View Project →</Button></Link>}
             </div>
-          )}
-
-          <div>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Priority</h3>
-            <select value={task.priority} onChange={e => updateTask({ priority: e.target.value })} className="w-full h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-300">
-              <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option>
-            </select>
+            
+            {projectKnowledge.length === 0 ? (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <Folder className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No project-specific knowledge entries.</p>
+              </CardContent></Card>
+            ) : (
+              <div className="grid gap-3">
+                {projectKnowledge.map(k => (
+                  <Card key={k.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{k.title}</p>
+                      <Badge variant="outline" className="mt-1 text-xs">{k.entry_type}</Badge>
+                      <p className="text-sm text-zinc-400 mt-2 line-clamp-3">{k.content}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
+        </TabsContent>
 
-          <div>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Details</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-zinc-500">Agent</span><span className="text-zinc-300">{(task as { assigned_agent_name?: string }).assigned_agent_name || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Created</span><span className="text-zinc-300">{formatDate(task.created_at)}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Updated</span><span className="text-zinc-300">{formatDate(task.updated_at)}</span></div>
-              {task.due_date && <div className="flex justify-between"><span className="text-zinc-500">Due</span><span className="text-zinc-300">{formatDate(task.due_date)}</span></div>}
+        {/* Client Knowledge Tab */}
+        <TabsContent value="client" className="mt-0">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Client Knowledge</h3>
+              {task.client_id && <Link href={`/clients/${task.client_id}`}><Button size="sm" variant="ghost">View Client →</Button></Link>}
             </div>
+            
+            {clientKnowledge.length === 0 ? (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No client-specific knowledge entries.</p>
+              </CardContent></Card>
+            ) : (
+              <div className="grid gap-3">
+                {clientKnowledge.map(k => (
+                  <Card key={k.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{k.title}</p>
+                      <Badge variant="outline" className="mt-1 text-xs">{k.entry_type}</Badge>
+                      <p className="text-sm text-zinc-400 mt-2 line-clamp-3">{k.content}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
+        </TabsContent>
 
-          <div>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Actions</h3>
-            <div className="space-y-1.5">
-              <Button variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => updateTask({ status: 'in_progress' })}><User className="h-3 w-3 mr-2" />Start Work</Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => updateTask({ status: 'awaiting_approval' })}><Clock className="h-3 w-3 mr-2" />Send for Review</Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => updateTask({ status: 'done' })}><CheckCircle2 className="h-3 w-3 mr-2" />Mark Done</Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-amber-400" onClick={() => { updateTask({ status: 'blocked', sub_status: 'waiting_client' }); }}><AlertTriangle className="h-3 w-3 mr-2" />Block: Waiting Client</Button>
+        {/* Files Tab */}
+        <TabsContent value="files" className="mt-0">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowAddFile(true)}>
+                <Upload className="h-4 w-4 mr-2" />Upload File
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowAddLink(true)}>
+                <Link2 className="h-4 w-4 mr-2" />Add Link
+              </Button>
             </div>
+            
+            {showAddFile && (
+              <Card className="border-blue-500/30 bg-blue-500/5">
+                <CardContent className="p-4">
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
+                  <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                    Choose File
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setShowAddFile(false)} className="ml-2">Cancel</Button>
+                </CardContent>
+              </Card>
+            )}
+            
+            {showAddLink && (
+              <Card className="border-blue-500/30 bg-blue-500/5">
+                <CardContent className="p-4 space-y-3">
+                  <Input placeholder="Link title (optional)" value={newLinkTitle} onChange={e => setNewLinkTitle(e.target.value)} />
+                  <Input type="url" placeholder="https://..." value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setShowAddLink(false)}>Cancel</Button>
+                    <Button size="sm" onClick={handleAddLink}>Save Link</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
+            {links.length > 0 && (
+              <div>
+                <h4 className="font-medium text-sm text-zinc-400 mb-2">Links</h4>
+                <div className="grid gap-2">
+                  {links.map(l => (
+                    <a key={l.id} href={l.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 hover:bg-zinc-800/50 group">
+                      <Link2 className="h-5 w-5 text-blue-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate group-hover:text-blue-400">{l.title}</p>
+                        <p className="text-xs text-zinc-500 truncate">{l.url}</p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 text-zinc-600" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {fileAttachments.length > 0 && (
+              <div>
+                <h4 className="font-medium text-sm text-zinc-400 mb-2">Files</h4>
+                <div className="grid gap-2">
+                  {fileAttachments.map(f => (
+                    <div key={f.id} className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 hover:bg-zinc-800/50 group">
+                      <FileText className="h-5 w-5 text-zinc-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{f.title}</p>
+                        <p className="text-xs text-zinc-500">{f.file_name} • {f.file_size ? (f.file_size / 1024).toFixed(1) : 0}KB</p>
+                      </div>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteAttachment(f.id)}>
+                        <Trash2 className="h-4 w-4 text-zinc-500 hover:text-red-400" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {fileAttachments.length === 0 && links.length === 0 && (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No files or links attached yet.</p>
+              </CardContent></Card>
+            )}
           </div>
-        </div>
+        </TabsContent>
+
+        {/* Timeline Tab */}
+        <TabsContent value="timeline" className="mt-0">
+          <div className="space-y-4">
+            {activities.length === 0 ? (
+              <Card><CardContent className="p-8 text-center text-zinc-500">
+                <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No activity recorded yet.</p>
+              </CardContent></Card>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-4 top-0 bottom-0 w-px bg-zinc-800" />
+                <div className="space-y-4">
+                  {activities.map(a => (
+                    <div key={a.id} className="flex gap-4 relative">
+                      <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 z-10">
+                        {a.activity_type === 'status_change' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> :
+                         a.activity_type === 'comment' ? <MessageSquare className="h-4 w-4 text-blue-400" /> :
+                         a.activity_type === 'assignment' ? <User className="h-4 w-4 text-purple-400" /> :
+                         <Clock className="h-4 w-4 text-zinc-400" />}
+                      </div>
+                      <div className="flex-1 pb-4">
+                        <p className="text-sm">{a.message}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{timeAgo(a.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </TabsContent>
       </div>
     </div>
   );
