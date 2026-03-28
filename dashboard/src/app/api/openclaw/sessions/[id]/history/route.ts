@@ -23,8 +23,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     // First get the session to find its key
-    const sessions = await client.listSessions();
-    const session = sessions.find((s: { sessionId: string; key?: string }) => s.sessionId === id);
+    const sessions = await client.listSessions() as Array<{ sessionId?: string; key?: string; [key: string]: unknown }>;
+    const session = sessions.find(s => s.sessionId === id || s.key === id);
     
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
