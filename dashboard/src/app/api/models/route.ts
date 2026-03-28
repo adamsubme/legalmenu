@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import { verifySession } from '@/lib/auth';
 
@@ -6,10 +6,10 @@ export const dynamic = 'force-dynamic';
 
 const CONFIG_PATH = '/root/.openclaw/openclaw.json';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     // Auth check
-    const session = await verifySession();
+    const session = await verifySession(request);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
