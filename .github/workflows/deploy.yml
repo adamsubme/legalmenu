@@ -1,0 +1,80 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'README/**'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for secrets
+        run: |
+          if grep -rE "(admin123|Mica#3000|sk-proj-)" --include="*.js" --include="*.ts" --include="*.json" dashboard/ src/ 2>/dev/null | grep -v node_modules | grep -v ".next"; then
+            echo "❌ Secrets found in code! Clean before deploying."
+            exit 1
+          fi
+          echo "✓ No secrets detected"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: dashboard
+
+      - name: Run lint
+        run: npm run lint
+        working-directory: dashboard
+
+      - name: Run type check
+        run: npx tsc --noEmit
+        working-directory: dashboard
+
+      - name: Build application
+        run: npm run build
+        working-directory: dashboard
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Create deployment package
+        run: |
+          tar -czf deployment.tar.gz \
+            --exclude='.next/BUILD_ID' \
+            --exclude='.next/cache' \
+            .next \
+            package.json \
+            package-lock.json \
+            next.config.mjs \
+            ecosystem.config.js.example
+        working-directory: dashboard
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/mission-control/dashboard
+            npm ci --legacy-peer-deps
+            npm run build
+            pm2 restart mission-control || pm2 start ecosystem.config.js
+            pm2 save
+          env:
+            NODE_ENV: production

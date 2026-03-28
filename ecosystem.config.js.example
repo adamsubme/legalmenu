@@ -1,0 +1,27 @@
+module.exports = {
+  apps: [{
+    name: 'mission-control',
+    cwd: '/root/mission-control/dashboard',
+    script: 'npm',
+    args: 'start',
+    env: {
+      NODE_ENV: 'production',
+    },
+    env_production: {
+      NODE_ENV: 'production',
+      AGENT_API_KEY: process.env.AGENT_API_KEY,
+      MC_LOGIN_USER: process.env.MC_LOGIN_USER,
+      MC_LOGIN_PASSWORD: process.env.MC_LOGIN_PASSWORD,
+      AUTH_USERNAME: process.env.AUTH_USERNAME,
+      AUTH_PASSWORD: process.env.AUTH_PASSWORD,
+      OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL,
+      OPENCLAW_GATEWAY_TOKEN: process.env.OPENCLAW_GATEWAY_TOKEN,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      DATABASE_PATH: process.env.DATABASE_PATH || './mission-control.db',
+      SESSION_SECRET: process.env.SESSION_SECRET,
+      MISSION_CONTROL_ORIGIN: process.env.MISSION_CONTROL_ORIGIN,
+      NOTION_TOKEN: process.env.NOTION_TOKEN,
+      NOTION_TASK_DB: process.env.NOTION_TASK_DB,
+    }
+  }]
+};

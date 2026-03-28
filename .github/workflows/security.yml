@@ -1,0 +1,67 @@
+name: Security
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        run: |
+          echo "🔍 Scanning for leaked secrets..."
+          
+          # Patterns to detect
+          PATTERNS=(
+            "sk-proj-"
+            "admin123"
+            "password.*=.*['\"][^'\"]{6,}"
+            "api_key.*=.*['\"][^'\"]{20,}"
+            "GOCSPX-"
+            "ntn_[a-zA-Z0-9_-]{40,}"
+            "ghp_[a-zA-Z0-9]{36,}"
+            "AKIA[A-Z0-9]{16}"
+          )
+          
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example"; then
+              echo "❌ Potential secret found: $pattern"
+              grep -rEn "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example"
+              exit 1
+            fi
+          done
+          echo "✓ No obvious secrets detected"
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ['javascript', 'typescript']
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

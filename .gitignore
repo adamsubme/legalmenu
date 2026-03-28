@@ -1,6 +1,8 @@
 # Secrets & credentials
 .env
-.env.*
+.env.local
+.env.production
+.env.*.local
 credentials/
 devices/
 exec-approvals.json
@@ -92,4 +94,6 @@ backups/
 *.log
 *.bak
 .DS_Store
+
+# Server configuration (use ecosystem.config.js.example as template)
 ecosystem.config.js
