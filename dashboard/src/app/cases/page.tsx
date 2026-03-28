@@ -67,10 +67,11 @@ const SUB_STATUS_GROUPS: Record<string, { label: string; stages: WorkflowStage[]
   delivered: { label: 'Delivered', stages: ['done'] },
 };
 
-type TaskExt = Task & { 
-  sub_status?: string | null; 
+type TaskExt = Task & {
+  sub_status?: string | null;
   agent_name?: string;
   agent_avatar?: string;
+  client_name?: string;
 };
 
 function getStageFromTask(task: TaskExt): WorkflowStage {
