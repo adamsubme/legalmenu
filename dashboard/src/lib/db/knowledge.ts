@@ -307,3 +307,80 @@ function calculateRelevanceScore(entry: KnowledgeEntry, searchTerms: string[]): 
 
   return score;
 }
+
+/**
+ * Build hierarchical context text for agents
+ * Returns formatted context string with: global -> client -> project -> task knowledge
+ */
+export function buildAgentContext(options: {
+  client_id?: string;
+  project_id?: string;
+  task_id?: string;
+  include_files?: boolean;
+  limit?: number;
+}): string {
+  const parts: string[] = [];
+  const limit = options.limit || 50;
+
+  // 1. Global knowledge header
+  const global = listKnowledge({ scope: 'global' });
+  if (global.length > 0) {
+    parts.push('## GLOBAL KNOWLEDGE (Legal Framework & Templates)');
+    for (const entry of global.slice(0, 10)) {
+      parts.push(`\n### ${entry.title} [${entry.entry_type}]`);
+      parts.push(entry.content.slice(0, 500));
+      if (entry.tags) parts.push(`Tags: ${entry.tags}`);
+    }
+  }
+
+  // 2. Client knowledge
+  if (options.client_id) {
+    const client = listKnowledge({ scope: 'client', scope_id: options.client_id });
+    if (client.length > 0) {
+      parts.push('\n\n## CLIENT-SPECIFIC KNOWLEDGE');
+      for (const entry of client.slice(0, 10)) {
+        parts.push(`\n### ${entry.title} [${entry.entry_type}]`);
+        parts.push(entry.content.slice(0, 500));
+        if (entry.tags) parts.push(`Tags: ${entry.tags}`);
+      }
+    }
+  }
+
+  // 3. Project knowledge
+  if (options.project_id) {
+    const project = listKnowledge({ scope: 'project', scope_id: options.project_id });
+    if (project.length > 0) {
+      parts.push('\n\n## PROJECT-SPECIFIC KNOWLEDGE');
+      for (const entry of project.slice(0, 10)) {
+        parts.push(`\n### ${entry.title} [${entry.entry_type}]`);
+        parts.push(entry.content.slice(0, 500));
+        if (entry.tags) parts.push(`Tags: ${entry.tags}`);
+      }
+    }
+
+    // Also get linked knowledge
+    const linked = getProjectKnowledge(options.project_id);
+    if (linked.length > 0) {
+      parts.push('\n\n## RELATED PROJECT KNOWLEDGE');
+      for (const entry of linked.slice(0, 5)) {
+        parts.push(`\n### ${entry.title}`);
+        parts.push(entry.content.slice(0, 300));
+      }
+    }
+  }
+
+  // 4. Task-specific knowledge
+  if (options.task_id) {
+    const task = listKnowledge({ scope: 'task', scope_id: options.task_id });
+    if (task.length > 0) {
+      parts.push('\n\n## CASE-SPECIFIC KNOWLEDGE');
+      for (const entry of task.slice(0, 10)) {
+        parts.push(`\n### ${entry.title} [${entry.entry_type}]`);
+        parts.push(entry.content);
+        if (entry.tags) parts.push(`Tags: ${entry.tags}`);
+      }
+    }
+  }
+
+  return parts.join('\n').slice(0, 8000);
+}

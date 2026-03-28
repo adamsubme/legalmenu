@@ -11,6 +11,8 @@ import Database from 'better-sqlite3';
 import { migration009 } from './migration-009';
 import { migration011 } from './migration-011';
 import { migration012 } from './migration-012';
+import { migration013 } from './migration-013';
+import { migration014 } from './migration-014';
 
 interface Migration {
   id: string;
@@ -271,6 +273,10 @@ const migrations: Migration[] = [
   migration011,
 
   migration012,
+
+  migration013,
+
+  migration014,
 ];
 
 /**
