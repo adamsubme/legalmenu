@@ -23,7 +23,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     // First get the session to find its key
-    const sessions = await client.listSessions() as unknown as Array<{ sessionId?: string; key?: string }>;
+    const sessionsResponse = await client.listSessions() as { sessions?: Array<{ sessionId?: string; key?: string }> };
+    const sessions = sessionsResponse.sessions || [];
     const session = sessions.find(s => s.sessionId === id || s.key === id);
     
     if (!session) {
@@ -68,7 +69,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Find session to get its key
-    const sessions = await client.listSessions() as unknown as Array<{ sessionId?: string; key?: string }>;
+    const sessionsResponse = await client.listSessions() as { sessions?: Array<{ sessionId?: string; key?: string }> };
+    const sessions = sessionsResponse.sessions || [];
     const session = sessions.find(s => s.sessionId === id || s.key === id);
     const key = providedKey || session?.key || id;
 
