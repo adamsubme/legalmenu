@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import type { AttachmentType } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +19,8 @@ export async function GET(
       .all(taskId);
     return NextResponse.json(rows);
   } catch (e) {
-    console.error('[GET attachments]', e);
-    return NextResponse.json({ error: 'Failed to list attachments' }, { status: 500 });
+    logger.error({ event: 'attachments_list_failed' }, e);
+    return NextResponse.json({ error: api.internalError('list attachments') }, { status: 500 });
   }
 }
 
@@ -41,7 +43,7 @@ export async function POST(
     };
 
     if (!body.attachment_type || !['file', 'link', 'note'].includes(body.attachment_type)) {
-      return NextResponse.json({ error: 'Invalid attachment_type' }, { status: 400 });
+      return NextResponse.json({ error: api.attachments.invalidType }, { status: 400 });
     }
 
     const title = body.title?.trim();
@@ -53,7 +55,7 @@ export async function POST(
       return NextResponse.json({ error: 'url is required for link' }, { status: 400 });
     }
     if (body.attachment_type === 'note' && !body.content?.trim()) {
-      return NextResponse.json({ error: 'content is required for note' }, { status: 400 });
+      return NextResponse.json({ error: api.attachments.typeRequiredForNote }, { status: 400 });
     }
     if (body.attachment_type === 'file' && !body.file_path?.trim()) {
       return NextResponse.json({ error: 'file_path is required for file' }, { status: 400 });
@@ -86,7 +88,7 @@ export async function POST(
     const row = db.prepare('SELECT * FROM task_attachments WHERE id = ?').get(id);
     return NextResponse.json(row, { status: 201 });
   } catch (e) {
-    console.error('[POST attachments]', e);
-    return NextResponse.json({ error: 'Failed to create attachment' }, { status: 500 });
+    logger.error({ event: 'attachment_create_failed' }, e);
+    return NextResponse.json({ error: api.internalError('create attachment') }, { status: 500 });
   }
 }

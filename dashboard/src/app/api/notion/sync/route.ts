@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { queryAll, queryOne, run } from '@/lib/db';
-import { getAllTasks, createNotionTask, updateNotionTask, resolveAgentName } from '@/lib/notion/client';
+import { queryAll, run } from '@/lib/db';
+import { getAllTasks, createNotionTask, resolveAgentName } from '@/lib/notion/client';
+import { InternalError } from '@/lib/errors';
 import type { Agent } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 interface McTask {
   id: string;
@@ -23,19 +25,22 @@ function findAgentByName(agents: Agent[], notionName: string | null): Agent | nu
   if (!mcName) return null;
   return agents.find(a =>
     a.name === mcName || a.name.toLowerCase() === mcName.toLowerCase()
-  ) || null;
+  ) ?? null;
 }
 
-export async function POST() {
+export async function POST(): Promise<NextResponse> {
   try {
     const agents = queryAll<Agent>('SELECT * FROM agents');
     const notionTasks = await getAllTasks();
     const mcTasks = queryAll<McTask>(
-      'SELECT id, title, description, status, priority, assigned_agent_id, due_date, notion_page_id, notion_last_synced, updated_at FROM tasks'
+      `SELECT id, title, description, status, priority, assigned_agent_id,
+              due_date, notion_page_id, notion_last_synced, updated_at
+       FROM tasks`
     );
 
     const mcByNotion = new Map<string, McTask>();
     const mcWithoutNotion: McTask[] = [];
+
     for (const t of mcTasks) {
       if (t.notion_page_id) {
         mcByNotion.set(t.notion_page_id, t);
@@ -44,13 +49,11 @@ export async function POST() {
       }
     }
 
-    const notionIds = new Set(notionTasks.map(t => t.notion_page_id));
-
     let created = 0;
     let updated = 0;
     let pushed = 0;
 
-    // --- PULL: Notion -> MC ---
+    // Pull: Notion → MC
     for (const nt of notionTasks) {
       const existing = mcByNotion.get(nt.notion_page_id);
 
@@ -61,29 +64,21 @@ export async function POST() {
         const now = new Date().toISOString();
 
         run(
-          `INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, workspace_id, business_id, due_date, notion_page_id, notion_last_synced, source, created_at, updated_at)
+          `INSERT INTO tasks
+             (id, title, description, status, priority, assigned_agent_id, created_by_agent_id,
+              workspace_id, business_id, due_date, notion_page_id, notion_last_synced,
+              source, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'notion', ?, ?)`,
           [
-            id,
-            nt.title,
-            nt.description || null,
-            nt.status,
-            nt.priority,
-            agent?.id || null,
-            creator?.id || null,
-            'default',
-            'default',
-            nt.due_date,
-            nt.notion_page_id,
-            now,
-            now,
-            now,
+            id, nt.title, nt.description || null, nt.status, nt.priority,
+            agent?.id || null, creator?.id || null,
+            'default', 'default', nt.due_date, nt.notion_page_id, now,
+            now, now,
           ]
         );
         created++;
       } else {
         const notionEdited = new Date(nt.last_edited).getTime();
-        const mcEdited = new Date(existing.updated_at).getTime();
         const lastSync = existing.notion_last_synced
           ? new Date(existing.notion_last_synced).getTime()
           : 0;
@@ -93,17 +88,14 @@ export async function POST() {
           const now = new Date().toISOString();
 
           run(
-            `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, assigned_agent_id = ?, due_date = ?, notion_last_synced = ?, updated_at = ? WHERE id = ?`,
+            `UPDATE tasks
+               SET title = ?, description = ?, status = ?, priority = ?,
+                   assigned_agent_id = ?, due_date = ?, notion_last_synced = ?, updated_at = ?
+               WHERE id = ?`,
             [
-              nt.title,
-              nt.description || null,
-              nt.status,
-              nt.priority,
+              nt.title, nt.description || null, nt.status, nt.priority,
               agent?.id || existing.assigned_agent_id,
-              nt.due_date,
-              now,
-              now,
-              existing.id,
+              nt.due_date, now, now, existing.id,
             ]
           );
           updated++;
@@ -111,7 +103,7 @@ export async function POST() {
       }
     }
 
-    // --- PUSH: MC tasks without notion_page_id -> Notion ---
+    // Push: MC → Notion
     for (const mc of mcWithoutNotion) {
       const agent = mc.assigned_agent_id
         ? agents.find(a => a.id === mc.assigned_agent_id)
@@ -119,12 +111,12 @@ export async function POST() {
 
       try {
         const pageId = await createNotionTask({
-          title: mc.title,
-          status: mc.status,
-          priority: mc.priority,
-          description: mc.description || undefined,
-          due_date: mc.due_date,
-          ai_assignee: agent?.name || null,
+          title:         mc.title,
+          status:        mc.status,
+          priority:      mc.priority,
+          description:   mc.description || undefined,
+          due_date:      mc.due_date,
+          ai_assignee:   agent?.name || null,
         });
 
         const now = new Date().toISOString();
@@ -134,25 +126,24 @@ export async function POST() {
         );
         pushed++;
       } catch (err) {
-        console.error(`[Sync] Failed to push task "${mc.title}" to Notion:`, err);
+        // Per-task failures don't fail the whole sync
+        logger.error({ event: 'notion_push_failed', title: mc.title }, err);
       }
     }
 
     return NextResponse.json({
       success: true,
       stats: {
-        notion_total: notionTasks.length,
-        mc_total: mcTasks.length,
+        notion_total:    notionTasks.length,
+        mc_total:       mcTasks.length,
         created,
         updated,
         pushed_to_notion: pushed,
       },
     });
-  } catch (error) {
-    console.error('[Notion Sync] Error:', error);
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ event: 'notion_sync_failed', message: msg });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

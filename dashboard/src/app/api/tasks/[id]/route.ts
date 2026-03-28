@@ -1,80 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { queryOne, run, queryAll } from '@/lib/db';
+import { run, queryOne } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { getMissionControlUrl } from '@/lib/config';
-import { updateNotionTask } from '@/lib/notion/client';
-import type { Task, UpdateTaskRequest, Agent, TaskDeliverable } from '@/lib/types';
+import { getTaskById } from '@/lib/db/queries';
+import { parseRequest, updateTaskSchema } from '@/lib/validation';
+import { WorkflowError } from '@/lib/errors';
+import { enforceTransition, isValidStatus, type TaskStatus } from '@/lib/workflow';
+import type { Agent } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
-// GET /api/tasks/[id] - Get a single task
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const task = queryOne<Task>(
-      `SELECT t.*,
-        aa.name as assigned_agent_name,
-        aa.avatar_emoji as assigned_agent_emoji,
-        ca.name as created_by_agent_name,
-        ca.avatar_emoji as created_by_agent_emoji,
-        cl.name as client_name,
-        pr.name as project_name
-       FROM tasks t
-       LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
-       LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
-       LEFT JOIN clients cl ON t.client_id = cl.id
-       LEFT JOIN projects pr ON t.project_id = pr.id
-       WHERE t.id = ?`,
-      [id]
-    );
+    const task = getTaskById(id);
 
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: `Task ${id} not found`, code: 'NOT_FOUND' },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json(task);
   } catch (error) {
-    console.error('Failed to fetch task:', error);
-    return NextResponse.json({ error: 'Failed to fetch task' }, { status: 500 });
+    logger.error({ event: 'task_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch task') }, { status: 500 });
   }
 }
 
-// PATCH /api/tasks/[id] - Update a task
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params;
-    const body: UpdateTaskRequest & { updated_by_agent_id?: string } = await request.json();
+  let taskId: string;
 
-    const existing = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
+  try {
+    taskId = (await params).id;
+  } catch {
+    return NextResponse.json({ error: 'Invalid route parameters' }, { status: 400 });
+  }
+
+  try {
+    const body = await parseRequest(request, updateTaskSchema);
+
+    const existing = getTaskById(taskId);
     if (!existing) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: `Task ${taskId} not found`, code: 'NOT_FOUND' },
+        { status: 404 }
+      );
     }
 
+    // ── Validate existing status ─────────────────────────────────────────────
+    if (!isValidStatus(existing.status)) {
+      logger.error({ event: 'task_invalid_status', taskId, status: existing.status });
+      return NextResponse.json(
+        { error: `Task has invalid status "${existing.status}"`, code: 'INVALID_STATUS' },
+        { status: 422 }
+      );
+    }
+
+    // ── Workflow transition guard ───────────────────────────────────────────
+    if (body.status !== undefined && body.status !== existing.status) {
+      let actor: { id: string; is_master?: boolean } | undefined;
+
+      if (body.updated_by_agent_id) {
+        const agent = queryOne<Agent>(
+          'SELECT id, is_master FROM agents WHERE id = ?',
+          [body.updated_by_agent_id]
+        );
+        if (agent) {
+          actor = { id: agent.id, is_master: !!agent.is_master };
+        }
+      }
+
+      // Throws WorkflowError (422) on invalid transition
+      enforceTransition({
+        from: existing.status as TaskStatus,
+        to: body.status,
+        actor,
+      });
+    }
+
+    // ── Build field updates ─────────────────────────────────────────────────
     const updates: string[] = [];
     const values: unknown[] = [];
     const now = new Date().toISOString();
-
-    // Workflow enforcement for agent-initiated approvals
-    // If an agent is trying to move review→done, they must be a master agent
-    // User-initiated moves (no agent ID) are allowed
-    if (body.status === 'done' && existing.status === 'awaiting_approval' && body.updated_by_agent_id) {
-      const updatingAgent = queryOne<Agent>(
-        'SELECT is_master FROM agents WHERE id = ?',
-        [body.updated_by_agent_id]
-      );
-
-      if (!updatingAgent || !updatingAgent.is_master) {
-        return NextResponse.json(
-          { error: 'Forbidden: only master agent (Charlie) can approve tasks' },
-          { status: 403 }
-        );
-      }
-    }
 
     if (body.title !== undefined) {
       updates.push('title = ?');
@@ -84,9 +100,9 @@ export async function PATCH(
       updates.push('description = ?');
       values.push(body.description);
     }
-    if ((body as Record<string, unknown>).sub_status !== undefined) {
+    if (body.sub_status !== undefined) {
       updates.push('sub_status = ?');
-      values.push((body as Record<string, unknown>).sub_status);
+      values.push(body.sub_status);
     }
     if (body.priority !== undefined) {
       updates.push('priority = ?');
@@ -96,44 +112,58 @@ export async function PATCH(
       updates.push('due_date = ?');
       values.push(body.due_date);
     }
+    if (body.client_id !== undefined) {
+      updates.push('client_id = ?');
+      values.push(body.client_id);
+    }
+    if (body.project_id !== undefined) {
+      updates.push('project_id = ?');
+      values.push(body.project_id);
+    }
 
-    // Track if we need to dispatch task
     let shouldDispatch = false;
 
-    // Handle status change
+    // ── Status change ───────────────────────────────────────────────────────
     if (body.status !== undefined && body.status !== existing.status) {
       updates.push('status = ?');
       values.push(body.status);
 
-      // Auto-dispatch when moving to in_progress
-      if (body.status === 'in_progress' && existing.assigned_agent_id) {
-        shouldDispatch = true;
-      }
-
-      // Log status change event
       const eventType = body.status === 'done' ? 'task_completed' : 'task_status_changed';
       run(
         `INSERT INTO events (id, type, task_id, message, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [uuidv4(), eventType, id, `Task "${existing.title}" moved to ${body.status}`, now]
+        [uuidv4(), eventType, taskId, `Task "${existing.title}" moved to ${body.status}`, now]
       );
+
+      if (body.status === 'in_progress' && existing.assigned_agent_id) {
+        shouldDispatch = true;
+      }
     }
 
-    // Handle assignment change
+    // ── Assignment change ───────────────────────────────────────────────────
     if (body.assigned_agent_id !== undefined && body.assigned_agent_id !== existing.assigned_agent_id) {
       updates.push('assigned_agent_id = ?');
       values.push(body.assigned_agent_id);
 
       if (body.assigned_agent_id) {
-        const agent = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [body.assigned_agent_id]);
+        const agent = queryOne<Agent>(
+          'SELECT name FROM agents WHERE id = ?',
+          [body.assigned_agent_id]
+        );
         if (agent) {
           run(
             `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
              VALUES (?, ?, ?, ?, ?, ?)`,
-            [uuidv4(), 'task_assigned', body.assigned_agent_id, id, `"${existing.title}" assigned to ${agent.name}`, now]
+            [
+              uuidv4(),
+              'task_assigned',
+              body.assigned_agent_id,
+              taskId,
+              `"${existing.title}" assigned to ${agent.name}`,
+              now,
+            ]
           );
 
-          // Auto-dispatch if already in_progress or being moved to in_progress
           if (existing.status === 'in_progress' || body.status === 'in_progress') {
             shouldDispatch = true;
           }
@@ -142,111 +172,101 @@ export async function PATCH(
     }
 
     if (updates.length === 0) {
-      return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'No updates provided', code: 'VALIDATION_ERROR' },
+        { status: 400 }
+      );
     }
 
     updates.push('updated_at = ?');
     values.push(now);
-    values.push(id);
+    values.push(taskId);
 
     run(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`, values);
 
-    // Fetch updated task with all joined fields
-    const task = queryOne<Task>(
-      `SELECT t.*,
-        aa.name as assigned_agent_name,
-        aa.avatar_emoji as assigned_agent_emoji,
-        ca.name as created_by_agent_name,
-        ca.avatar_emoji as created_by_agent_emoji
-       FROM tasks t
-       LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
-       LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
-       WHERE t.id = ?`,
-      [id]
-    );
-
-    // Broadcast task update via SSE
-    if (task) {
-      broadcast({
-        type: 'task_updated',
-        payload: task,
-      });
+    // ── Broadcast via SSE ───────────────────────────────────────────────────
+    const updatedTask = getTaskById(taskId);
+    if (updatedTask) {
+      broadcast({ type: 'task_updated', payload: updatedTask });
     }
 
-    // Push changes to Notion
+    // ── Notion sync ────────────────────────────────────────────────────────
     if (existing.notion_page_id) {
+      const { updateNotionTask } = await import('@/lib/notion/client');
       const notionUpdates: Record<string, unknown> = {};
       if (body.title !== undefined) notionUpdates.title = body.title;
       if (body.status !== undefined) notionUpdates.status = body.status;
       if (body.priority !== undefined) notionUpdates.priority = body.priority;
       if (body.description !== undefined) notionUpdates.description = body.description;
       if (body.due_date !== undefined) notionUpdates.due_date = body.due_date;
-      if (body.assigned_agent_id !== undefined && body.assigned_agent_id) {
-        const agn = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [body.assigned_agent_id]);
+      if (body.assigned_agent_id && typeof body.assigned_agent_id === 'string') {
+        const agn = queryOne<Agent>(
+          'SELECT name FROM agents WHERE id = ?',
+          [body.assigned_agent_id]
+        );
         if (agn) notionUpdates.ai_assignee = agn.name;
       }
 
       updateNotionTask(existing.notion_page_id, notionUpdates as Parameters<typeof updateNotionTask>[1])
         .then(() => {
-          run('UPDATE tasks SET notion_last_synced = ? WHERE id = ?', [new Date().toISOString(), id]);
-          console.log(`[Notion] Task "${existing.title}" synced`);
+          run('UPDATE tasks SET notion_last_synced = ? WHERE id = ?', [new Date().toISOString(), taskId]);
+          logger.info({ event: 'notion_task_synced', taskId, title: existing.title });
         })
         .catch((err) => {
-          console.error(`[Notion] Failed to sync task "${existing.title}":`, err);
+          logger.error({ event: 'notion_sync_failed', taskId, title: existing.title }, err);
         });
     }
 
-    // Trigger auto-dispatch if needed
+    // ── Auto-dispatch ───────────────────────────────────────────────────────
     if (shouldDispatch) {
-      // Call dispatch endpoint asynchronously (don't wait for response)
       const missionControlUrl = getMissionControlUrl();
-      fetch(`${missionControlUrl}/api/tasks/${id}/dispatch`, {
+      fetch(`${missionControlUrl}/api/tasks/${taskId}/dispatch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(err => {
-        console.error('Auto-dispatch failed:', err);
+        headers: { 'Content-Type': 'application/json' },
+      }).catch((err) => {
+        logger.error({ event: 'task_auto_dispatch_failed', taskId }, err);
       });
     }
 
-    return NextResponse.json(task);
+    return NextResponse.json(updatedTask ?? { id: taskId });
   } catch (error) {
-    console.error('Failed to update task:', error);
-    return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+    if (error instanceof WorkflowError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, details: error.details },
+        { status: error.statusCode }
+      );
+    }
+    logger.error({ event: 'task_update_failed', taskId }, error);
+    return NextResponse.json({ error: api.internalError('update task') }, { status: 500 });
   }
 }
 
-// DELETE /api/tasks/[id] - Delete a task
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const existing = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
+    const existing = getTaskById(id);
 
     if (!existing) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: `Task ${id} not found`, code: 'NOT_FOUND' },
+        { status: 404 }
+      );
     }
 
-    // Delete or nullify related records first (foreign key constraints)
-    // Note: task_activities and task_deliverables have ON DELETE CASCADE
+    // Cascade deletes via FK constraints (task_activities, task_deliverables)
     run('DELETE FROM openclaw_sessions WHERE task_id = ?', [id]);
     run('DELETE FROM events WHERE task_id = ?', [id]);
-    // Conversations reference tasks - nullify or delete
     run('UPDATE conversations SET task_id = NULL WHERE task_id = ?', [id]);
-
-    // Now delete the task (cascades to task_activities and task_deliverables)
     run('DELETE FROM tasks WHERE id = ?', [id]);
 
-    // Broadcast deletion via SSE
-    broadcast({
-      type: 'task_deleted',
-      payload: { id },
-    });
+    broadcast({ type: 'task_deleted', payload: { id } });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete task:', error);
-    return NextResponse.json({ error: 'Failed to delete task' }, { status: 500 });
+    logger.error({ event: 'task_delete_failed' }, error);
+    return NextResponse.json({ error: api.internalError('delete task') }, { status: 500 });
   }
 }

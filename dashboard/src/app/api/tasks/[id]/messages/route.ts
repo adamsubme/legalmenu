@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listCaseMessages, createCaseMessage } from '@/lib/db/case-chat';
 import { logCommentAdded } from '@/lib/db/case-timeline';
 import type { CreateCaseMessageRequest } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -19,8 +21,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(messages);
   } catch (error) {
-    console.error('Failed to fetch messages:', error);
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+    logger.error({ event: 'messages_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch messages') }, { status: 500 });
   }
 }
 
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const body: CreateCaseMessageRequest & { user_id?: string; user_name?: string } = await request.json();
 
     if (!body.content || !body.content.trim()) {
-      return NextResponse.json({ error: 'Content is required' }, { status: 400 });
+      return NextResponse.json({ error: api.messages.contentRequired }, { status: 400 });
     }
 
     // Set sender info if not provided
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(message, { status: 201 });
   } catch (error) {
-    console.error('Failed to create message:', error);
-    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 });
+    logger.error({ event: 'message_create_failed' }, error);
+    return NextResponse.json({ error: api.internalError('create message') }, { status: 500 });
   }
 }

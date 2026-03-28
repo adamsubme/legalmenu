@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import type { Workspace, WorkspaceStats, TaskStatus } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 // Helper to generate slug from name
 function generateSlug(name: string): string {
@@ -33,14 +35,24 @@ export async function GET(request: NextRequest) {
         const counts: WorkspaceStats['taskCounts'] = {
           not_started: 0,
           in_progress: 0,
-          done: 0,
-          blocked: 0,
+          intake: 0,
+          research: 0,
+          drafting: 0,
+          review: 0,
+          testing: 0,
+          client_input: 0,
           awaiting_approval: 0,
+          done: 0,
+          cancelled: 0,
+          blocked: 0,
+          planning: 0,
           total: 0
         };
-        
+
         taskCounts.forEach(tc => {
-          counts[tc.status] = tc.count;
+          if (tc.status in counts) {
+            (counts as Record<string, number>)[tc.status] = tc.count;
+          }
           counts.total += tc.count;
         });
         
@@ -65,8 +77,8 @@ export async function GET(request: NextRequest) {
     const workspaces = db.prepare('SELECT * FROM workspaces ORDER BY name').all();
     return NextResponse.json(workspaces);
   } catch (error) {
-    console.error('Failed to fetch workspaces:', error);
-    return NextResponse.json({ error: 'Failed to fetch workspaces' }, { status: 500 });
+    logger.error({ event: 'workspaces_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch workspaces') }, { status: 500 });
   }
 }
 
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
     const { name, description, icon } = body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+      return NextResponse.json({ error: api.workspaces.nameRequired }, { status: 400 });
     }
 
     const db = getDb();
@@ -87,7 +99,7 @@ export async function POST(request: NextRequest) {
     // Check if slug already exists
     const existing = db.prepare('SELECT id FROM workspaces WHERE slug = ?').get(slug);
     if (existing) {
-      return NextResponse.json({ error: 'A workspace with this name already exists' }, { status: 400 });
+      return NextResponse.json({ error: api.workspaces.alreadyExists }, { status: 400 });
     }
 
     db.prepare(`
@@ -98,7 +110,7 @@ export async function POST(request: NextRequest) {
     const workspace = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id);
     return NextResponse.json(workspace, { status: 201 });
   } catch (error) {
-    console.error('Failed to create workspace:', error);
-    return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 });
+    logger.error({ event: 'workspace_create_failed' }, error);
+    return NextResponse.json({ error: api.internalError('create workspace') }, { status: 500 });
   }
 }

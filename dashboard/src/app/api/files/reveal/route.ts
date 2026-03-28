@@ -8,6 +8,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 const execAsync = promisify(exec);
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (!isAllowed) {
-      console.warn(`[FILE] Blocked access to: ${filePath}`);
+      logger.warn({ event: 'file_reveal_blocked', path: filePath });
       return NextResponse.json(
         { error: 'Path not in allowed directories' },
         { status: 403 }
@@ -64,10 +65,10 @@ export async function POST(request: NextRequest) {
 
     await execAsync(command);
 
-    console.log(`[FILE] Revealed: ${normalizedPath}`);
+    logger.info({ event: 'file_revealed', path: normalizedPath });
     return NextResponse.json({ success: true, path: normalizedPath });
   } catch (error) {
-    console.error('[FILE] Error revealing file:', error);
+    logger.error({ event: 'file_reveal_failed' }, error);
     return NextResponse.json(
       { error: 'Failed to reveal file' },
       { status: 500 }

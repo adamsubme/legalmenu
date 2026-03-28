@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { Plus, ChevronRight, GripVertical, Send } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Task, TaskStatus } from '@/lib/types';
-import { TaskModal } from './TaskModal';
+import { TaskModalLazy, ComponentSkeleton } from './lazy';
 import { formatDistanceToNow } from 'date-fns';
+import { api } from '@/lib/api-client';
 
 interface MissionQueueProps {
   workspaceId?: string;
@@ -30,21 +31,16 @@ export function MissionQueue({ workspaceId }: MissionQueueProps) {
 
   const handleDispatch = async (task: Task) => {
     try {
-      const res = await fetch(`/api/tasks/${task.id}/dispatch`, { method: 'POST' });
-      if (res.ok) {
-        const tasksRes = await fetch(`/api/tasks?workspace_id=${workspaceId || 'default'}`);
-        if (tasksRes.ok) setTasks(await tasksRes.json());
-        addEvent({
-          id: crypto.randomUUID(),
-          type: 'task_status_changed',
-          task_id: task.id,
-          message: `Wysłano do ${task.assigned_agent?.name || 'agenta'}`,
-          created_at: new Date().toISOString(),
-        });
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Dispatch failed');
-      }
+      await api.post(`/tasks/${task.id}/dispatch`);
+      const { items: tasks } = await api.get<{ items: Task[]; count: number }>(`/tasks?workspace_id=${workspaceId || 'default'}`);
+      setTasks(tasks);
+      addEvent({
+        id: crypto.randomUUID(),
+        type: 'task_status_changed',
+        task_id: task.id,
+        message: `Wysłano do ${task.assigned_agent?.name || 'agenta'}`,
+        created_at: new Date().toISOString(),
+      });
     } catch (e) {
       alert('Dispatch failed');
     }
@@ -72,22 +68,14 @@ export function MissionQueue({ workspaceId }: MissionQueueProps) {
 
     // Persist to API
     try {
-      const res = await fetch(`/api/tasks/${draggedTask.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: targetStatus }),
+      await api.patch(`/tasks/${draggedTask.id}`, { status: targetStatus });
+      addEvent({
+        id: crypto.randomUUID(),
+        type: targetStatus === 'done' ? 'task_completed' : 'task_status_changed',
+        task_id: draggedTask.id,
+        message: `Task "${draggedTask.title}" moved to ${targetStatus}`,
+        created_at: new Date().toISOString(),
       });
-
-      if (res.ok) {
-        // Add event
-        addEvent({
-          id: crypto.randomUUID(),
-          type: targetStatus === 'done' ? 'task_completed' : 'task_status_changed',
-          task_id: draggedTask.id,
-          message: `Task "${draggedTask.title}" moved to ${targetStatus}`,
-          created_at: new Date().toISOString(),
-        });
-      }
     } catch (error) {
       console.error('Failed to update task status:', error);
       // Revert on error
@@ -155,12 +143,16 @@ export function MissionQueue({ workspaceId }: MissionQueueProps) {
         })}
       </div>
 
-      {/* Modals */}
+      {/* Modals - lazy loaded */}
       {showCreateModal && (
-        <TaskModal onClose={() => setShowCreateModal(false)} workspaceId={workspaceId} />
+        <Suspense fallback={<ComponentSkeleton className="fixed inset-0 z-50" />}>
+          <TaskModalLazy onClose={() => setShowCreateModal(false)} workspaceId={workspaceId} />
+        </Suspense>
       )}
       {editingTask && (
-        <TaskModal task={editingTask} onClose={() => setEditingTask(null)} workspaceId={workspaceId} />
+        <Suspense fallback={<ComponentSkeleton className="fixed inset-0 z-50" />}>
+          <TaskModalLazy task={editingTask} onClose={() => setEditingTask(null)} workspaceId={workspaceId} />
+        </Suspense>
       )}
     </div>
   );

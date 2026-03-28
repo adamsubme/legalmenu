@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import { verifySession } from '@/lib/auth';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +13,7 @@ export async function GET(request: NextRequest) {
     // Auth check
     const session = await verifySession(request);
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: api.unauthorized }, { status: 401 });
     }
     
     const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(models);
   } catch (e) {
-    console.error('[Models] Failed to read config:', e);
-    return NextResponse.json({ error: 'Failed to read models config' }, { status: 500 });
+    logger.error({ event: 'models_config_read_failed' }, e);
+    return NextResponse.json({ error: api.models.readFailed }, { status: 500 });
   }
 }

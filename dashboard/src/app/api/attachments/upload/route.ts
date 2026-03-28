@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       file_mime: file.type || 'application/octet-stream',
     });
   } catch (e) {
-    console.error('[attachments/upload]', e);
+    logger.error({ event: 'attachment_upload_failed' }, e);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }

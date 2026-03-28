@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { existsSync, unlinkSync } from 'fs';
 import path from 'path';
 import { getDb } from '@/lib/db';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +24,7 @@ export async function DELETE(
       .get(attachmentId, taskId) as { file_path?: string | null } | undefined;
 
     if (!row) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      return NextResponse.json({ error: api.attachments.notFound }, { status: 404 });
     }
 
     if (row.file_path) {
@@ -31,7 +33,7 @@ export async function DELETE(
         try {
           unlinkSync(resolved);
         } catch (e) {
-          console.warn('[DELETE attachment] file unlink:', e);
+          logger.warn({ event: 'attachment_file_unlink_failed' }, e);
         }
       }
     }
@@ -39,7 +41,7 @@ export async function DELETE(
     db.prepare('DELETE FROM task_attachments WHERE id = ? AND task_id = ?').run(attachmentId, taskId);
     return NextResponse.json({ success: true });
   } catch (e) {
-    console.error('[DELETE attachment]', e);
-    return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
+    logger.error({ event: 'attachment_delete_failed' }, e);
+    return NextResponse.json({ error: api.internalError('delete') }, { status: 500 });
   }
 }

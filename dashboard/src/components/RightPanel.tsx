@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { LiveFeed } from './LiveFeed';
-import { AgentChatPanel } from './AgentChatPanel';
+import { AgentChatPanelLazy, ComponentSkeleton } from './lazy';
 import { Rss, MessageSquare } from 'lucide-react';
 
 type Tab = 'feed' | 'chat';
@@ -34,7 +34,13 @@ export function RightPanel() {
       </div>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {tab === 'feed' && <div className="flex-1 min-h-0 overflow-hidden"><LiveFeed /></div>}
-        {tab === 'chat' && <div className="flex-1 min-h-0 overflow-hidden"><AgentChatPanel /></div>}
+        {tab === 'chat' && (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <Suspense fallback={<ComponentSkeleton className="h-full" />}>
+              <AgentChatPanelLazy />
+            </Suspense>
+          </div>
+        )}
       </div>
     </div>
   );

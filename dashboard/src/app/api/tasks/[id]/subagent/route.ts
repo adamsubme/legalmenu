@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/tasks/[id]/subagent
@@ -88,7 +90,7 @@ export async function POST(
 
     return NextResponse.json(session, { status: 201 });
   } catch (error) {
-    console.error('Error registering sub-agent:', error);
+    logger.error({ event: 'subagent_register_failed' }, error);
     return NextResponse.json(
       { error: 'Failed to register sub-agent' },
       { status: 500 }
@@ -121,9 +123,9 @@ export async function GET(
 
     return NextResponse.json(sessions);
   } catch (error) {
-    console.error('Error fetching sub-agents:', error);
+    logger.error({ event: 'subagents_fetch_failed' }, error);
     return NextResponse.json(
-      { error: 'Failed to fetch sub-agents' },
+      { error: api.internalError('fetch sub-agents') },
       { status: 500 }
     );
   }

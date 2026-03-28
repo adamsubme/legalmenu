@@ -4,6 +4,8 @@
  */
 'use client';
 
+import { ui } from '@/lib/messages';
+
 import { useState, useEffect, useRef } from 'react';
 import {
   Paperclip, Link as LinkIcon, StickyNote, Upload, Trash2,
@@ -11,6 +13,7 @@ import {
   FileBadge, Plus, X, ChevronDown, ChevronUp, Loader2,
 } from 'lucide-react';
 import type { TaskAttachment, AttachmentType } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 interface CaseDocumentsProps {
   taskId: string;
@@ -61,8 +64,8 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
 
   const loadAttachments = async () => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}/attachments`);
-      if (res.ok) setAttachments(await res.json());
+      const atts = await api.get<TaskAttachment[]>(`/tasks/${taskId}/attachments`);
+      setAttachments(atts);
     } catch (e) {
       console.error(e);
     } finally {
@@ -79,28 +82,20 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
 
     for (const file of Array.from(files)) {
       try {
-        // 1. Upload binary
         const fd = new FormData();
         fd.append('file', file);
         fd.append('taskId', taskId);
-        const upRes = await fetch('/api/attachments/upload', { method: 'POST', body: fd });
-        if (!upRes.ok) { console.error('Upload failed', file.name); continue; }
-        const { file_path, file_name, file_size, file_mime } = await upRes.json();
+        const { file_path, file_name, file_size, file_mime } = await api.upload<{ file_path: string; file_name: string; file_size: number; file_mime: string }>('/attachments/upload', fd);
 
-        // 2. Create attachment record
-        const attRes = await fetch(`/api/tasks/${taskId}/attachments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            attachment_type: 'file',
-            title: file.name,
-            file_path,
-            file_name,
-            file_size,
-            file_mime,
-          }),
+        const newAtt = await api.post<TaskAttachment>(`/tasks/${taskId}/attachments`, {
+          attachment_type: 'file',
+          title: file.name,
+          file_path,
+          file_name,
+          file_size,
+          file_mime,
         });
-        if (attRes.ok) results.push(await attRes.json());
+        results.push(newAtt);
       } catch (err) {
         console.error('Error uploading', file.name, err);
       }
@@ -115,42 +110,34 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
   const handleAddLink = async () => {
     if (!linkForm.title || !linkForm.url) return;
     try {
-      const res = await fetch(`/api/tasks/${taskId}/attachments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attachment_type: 'link', ...linkForm }),
+      const newAtt = await api.post<TaskAttachment>(`/tasks/${taskId}/attachments`, {
+        attachment_type: 'link',
+        ...linkForm,
       });
-      if (res.ok) {
-        const newAtt = await res.json();
-        setAttachments((prev) => [newAtt, ...prev]);
-        setLinkForm({ title: '', url: '', description: '' });
-        setAddMode(null);
-      }
+      setAttachments((prev) => [newAtt, ...prev]);
+      setLinkForm({ title: '', url: '', description: '' });
+      setAddMode(null);
     } catch (e) { console.error(e); }
   };
 
   const handleAddNote = async () => {
     if (!noteForm.title || !noteForm.content) return;
     try {
-      const res = await fetch(`/api/tasks/${taskId}/attachments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attachment_type: 'note', ...noteForm }),
+      const newAtt = await api.post<TaskAttachment>(`/tasks/${taskId}/attachments`, {
+        attachment_type: 'note',
+        ...noteForm,
       });
-      if (res.ok) {
-        const newAtt = await res.json();
-        setAttachments((prev) => [newAtt, ...prev]);
-        setNoteForm({ title: '', content: '' });
-        setAddMode(null);
-      }
+      setAttachments((prev) => [newAtt, ...prev]);
+      setNoteForm({ title: '', content: '' });
+      setAddMode(null);
     } catch (e) { console.error(e); }
   };
 
   const handleDelete = async (att: TaskAttachment) => {
-    if (!confirm(`Usuń "${att.title}"?`)) return;
+    if (!confirm(ui.misc.confirmDelete(att.title))) return;
     try {
-      const res = await fetch(`/api/tasks/${taskId}/attachments/${att.id}`, { method: 'DELETE' });
-      if (res.ok) setAttachments((prev) => prev.filter((a) => a.id !== att.id));
+      await api.delete(`/tasks/${taskId}/attachments/${att.id}`);
+      setAttachments((prev) => prev.filter((a) => a.id !== att.id));
     } catch (e) { console.error(e); }
   };
 
@@ -163,7 +150,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-mc-text-secondary">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Ładowanie dokumentów...
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> {ui.processing.loading}
       </div>
     );
   }
@@ -176,26 +163,26 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
           onClick={() => setAddMode(addMode === 'file' ? null : 'file')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${addMode === 'file' ? 'bg-mc-accent text-mc-bg' : 'bg-mc-bg-tertiary text-mc-text hover:bg-mc-border'}`}
         >
-          <Upload className="w-4 h-4" /> Prześlij plik
+          <Upload className="w-4 h-4" /> {ui.buttons.uploadFile}
         </button>
         <button
           onClick={() => setAddMode(addMode === 'link' ? null : 'link')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${addMode === 'link' ? 'bg-mc-accent text-mc-bg' : 'bg-mc-bg-tertiary text-mc-text hover:bg-mc-border'}`}
         >
-          <LinkIcon className="w-4 h-4" /> Dodaj link
+          <LinkIcon className="w-4 h-4" /> {ui.buttons.addLink}
         </button>
         <button
           onClick={() => setAddMode(addMode === 'note' ? null : 'note')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${addMode === 'note' ? 'bg-mc-accent text-mc-bg' : 'bg-mc-bg-tertiary text-mc-text hover:bg-mc-border'}`}
         >
-          <StickyNote className="w-4 h-4" /> Notatka
+          <StickyNote className="w-4 h-4" /> {ui.buttons.addNote}
         </button>
       </div>
 
       {/* File upload panel */}
       {addMode === 'file' && (
         <div className="p-4 bg-mc-bg rounded-lg border border-dashed border-mc-accent/50 space-y-3">
-          <p className="text-sm text-mc-text-secondary">Przeciągnij pliki lub kliknij, aby wybrać (PDF, DOCX, JPG, ...)</p>
+          <p className="text-sm text-mc-text-secondary">{ui.placeholders.fileOrClickToSelect}</p>
           <input
             ref={fileInputRef}
             type="file"
@@ -206,7 +193,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
           />
           {uploading && (
             <div className="flex items-center gap-2 text-sm text-mc-accent">
-              <Loader2 className="w-4 h-4 animate-spin" /> Przesyłanie...
+              <Loader2 className="w-4 h-4 animate-spin" /> {ui.processing.uploading}
             </div>
           )}
         </div>
@@ -217,21 +204,21 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
         <div className="p-4 bg-mc-bg rounded-lg border border-mc-border space-y-3">
           <input
             type="text"
-            placeholder="Tytuł *"
+            placeholder={ui.placeholders.titleRequired}
             value={linkForm.title}
             onChange={(e) => setLinkForm({ ...linkForm, title: e.target.value })}
             className="w-full bg-mc-bg-secondary border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
           />
           <input
             type="url"
-            placeholder="URL *  (https://...)"
+            placeholder={ui.placeholders.urlRequired}
             value={linkForm.url}
             onChange={(e) => setLinkForm({ ...linkForm, url: e.target.value })}
             className="w-full bg-mc-bg-secondary border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
           />
           <input
             type="text"
-            placeholder="Opis (opcjonalnie)"
+            placeholder={ui.placeholders.addDetailsOptional}
             value={linkForm.description}
             onChange={(e) => setLinkForm({ ...linkForm, description: e.target.value })}
             className="w-full bg-mc-bg-secondary border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
@@ -242,10 +229,10 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
               disabled={!linkForm.title || !linkForm.url}
               className="flex items-center gap-1.5 px-4 py-2 bg-mc-accent text-mc-bg rounded text-sm font-medium disabled:opacity-40"
             >
-              <Plus className="w-4 h-4" /> Dodaj
+              <Plus className="w-4 h-4" /> {ui.buttons.save}
             </button>
             <button onClick={() => setAddMode(null)} className="px-3 py-2 text-sm text-mc-text-secondary hover:text-mc-text">
-              Anuluj
+              {ui.buttons.cancel}
             </button>
           </div>
         </div>
@@ -256,13 +243,13 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
         <div className="p-4 bg-mc-bg rounded-lg border border-mc-border space-y-3">
           <input
             type="text"
-            placeholder="Tytuł notatki *"
+            placeholder={ui.placeholders.noteTitleRequired}
             value={noteForm.title}
             onChange={(e) => setNoteForm({ ...noteForm, title: e.target.value })}
             className="w-full bg-mc-bg-secondary border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
           />
           <textarea
-            placeholder="Treść notatki *"
+            placeholder={ui.placeholders.noteContentRequired}
             value={noteForm.content}
             onChange={(e) => setNoteForm({ ...noteForm, content: e.target.value })}
             rows={5}
@@ -274,10 +261,10 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
               disabled={!noteForm.title || !noteForm.content}
               className="flex items-center gap-1.5 px-4 py-2 bg-mc-accent text-mc-bg rounded text-sm font-medium disabled:opacity-40"
             >
-              <Plus className="w-4 h-4" /> Zapisz
+              <Plus className="w-4 h-4" /> {ui.buttons.save}
             </button>
             <button onClick={() => setAddMode(null)} className="px-3 py-2 text-sm text-mc-text-secondary hover:text-mc-text">
-              Anuluj
+              {ui.buttons.cancel}
             </button>
           </div>
         </div>
@@ -287,7 +274,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
       {attachments.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-mc-text-secondary">
           <Paperclip className="w-10 h-10 mb-2 opacity-30" />
-          <p className="text-sm">Brak dokumentów. Dodaj pliki, linki lub notatki do sprawy.</p>
+          <p className="text-sm">{ui.empty.noCaseDocuments}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -318,7 +305,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
                       <span className="font-medium text-sm text-mc-text truncate">{att.title}</span>
                     )}
                     <span className="text-xs px-1.5 py-0.5 rounded bg-mc-bg-tertiary text-mc-text-secondary capitalize">
-                      {att.attachment_type === 'file' ? 'plik' : att.attachment_type === 'link' ? 'link' : 'notatka'}
+                      {att.attachment_type === 'file' ? ui.misc.file : att.attachment_type === 'link' ? ui.misc.link : ui.misc.note}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5 text-xs text-mc-text-secondary">
@@ -337,7 +324,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
                     <button
                       onClick={() => setExpandedNote(expandedNote === att.id ? null : att.id)}
                       className="p-1.5 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
-                      title="Pokaż treść"
+                      title={ui.tooltips.showContent}
                     >
                       {expandedNote === att.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
@@ -346,7 +333,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
                     <button
                       onClick={() => handleDownload(att)}
                       className="p-1.5 hover:bg-mc-bg-tertiary rounded text-mc-accent"
-                      title="Pobierz"
+                      title={ui.tooltips.download}
                     >
                       <Download className="w-4 h-4" />
                     </button>
@@ -354,7 +341,7 @@ export function CaseDocuments({ taskId }: CaseDocumentsProps) {
                   <button
                     onClick={() => handleDelete(att)}
                     className="p-1.5 hover:bg-mc-accent-red/10 rounded text-mc-accent-red"
-                    title="Usuń"
+                    title={ui.tooltips.delete}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

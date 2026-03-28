@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 // Base directory for all uploaded project files
 // Set via PROJECTS_PATH env var (e.g., ~/projects or /var/www/projects)
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Write the file
     writeFileSync(fullPath, content, { encoding });
 
-    console.log(`[FILE UPLOAD] Created: ${fullPath}`);
+    logger.info({ event: 'file_uploaded', path: fullPath, size: Buffer.byteLength(content, encoding) });
 
     return NextResponse.json({
       success: true,
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       size: Buffer.byteLength(content, encoding),
     }, { status: 201 });
   } catch (error) {
-    console.error('Error uploading file:', error);
+    logger.error({ event: 'file_upload_failed' }, error);
     return NextResponse.json(
       { error: 'Failed to upload file', details: String(error) },
       { status: 500 }

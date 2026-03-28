@@ -1,25 +1,30 @@
 /**
  * Configuration Management
- * 
+ *
  * Handles user-configurable settings for Mission Control.
  * Settings are stored in localStorage for client-side access.
- * 
+ *
  * NEVER commit hardcoded IPs, paths, or sensitive data!
  */
+
+import { logger } from './logger';
 
 export interface MissionControlConfig {
   // Workspace settings
   workspaceBasePath: string; // e.g., ~/Documents/Shared
   projectsPath: string; // e.g., ${workspaceBasePath}/projects
-  
+
   // Mission Control API URL (for Charlie orchestration)
   missionControlUrl: string; // Auto-detected or manually set
-  
+
   // OpenClaw Gateway settings (these come from .env on server)
   // Client-side only needs to know if it's configured
-  
+
   // Project defaults
   defaultProjectName: string; // 'mission-control' or custom
+
+  // Index signature for dynamic access
+  [key: string]: string;
 }
 
 const DEFAULT_CONFIG: MissionControlConfig = {
@@ -47,7 +52,7 @@ export function getConfig(): MissionControlConfig {
       return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch (error) {
-    console.error('Failed to load config:', error);
+    logger.error({ event: 'config_load_failed' }, error);
   }
 
   return DEFAULT_CONFIG;
@@ -83,7 +88,7 @@ export function updateConfig(updates: Partial<MissionControlConfig>): void {
   try {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(updated));
   } catch (error) {
-    console.error('Failed to save config:', error);
+    logger.error({ event: 'config_save_failed' }, error);
     throw new Error('Failed to save configuration');
   }
 }

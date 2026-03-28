@@ -8,6 +8,7 @@ import { SUB_STATUS_LABELS, timeAgo, STATUS_LABELS } from '@/lib/utils';
 import { AlertTriangle, MessageSquare, ArrowRight, Ban, Clock, HelpCircle, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import type { Task } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 type TaskExt = Task & { sub_status?: string };
 
@@ -18,8 +19,8 @@ export default function EscalationsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/tasks?workspace_id=default');
-        if (res.ok) setTasks(await res.json());
+        const { items: tasks } = await api.get<{ items: TaskExt[]; count: number }>('/tasks?workspace_id=default');
+        setTasks(tasks);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     }
@@ -36,12 +37,9 @@ export default function EscalationsPage() {
 
   const unblock = async (taskId: string) => {
     try {
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'in_progress', sub_status: null }),
-      });
-      const res = await fetch('/api/tasks?workspace_id=default');
-      if (res.ok) setTasks(await res.json());
+      await api.patch(`/tasks/${taskId}`, { status: 'in_progress', sub_status: null });
+      const { items: tasks } = await api.get<{ items: TaskExt[]; count: number }>('/tasks?workspace_id=default');
+      setTasks(tasks);
     } catch (e) { console.error(e); }
   };
 

@@ -1,14 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_MAP, STATUS_LABELS, SUB_STATUS_LABELS, timeAgo } from '@/lib/utils';
+import { useSSE } from '@/hooks/useSSE';
 import { Activity, Clock, Ban, CheckCircle2, AlertTriangle, ArrowRight, Briefcase, Plus, UserPlus, FolderPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { Task, Agent } from '@/lib/types';
+import type { Task, Agent, SSEEvent, TaskStatus } from '@/lib/types';
+import { api } from '@/lib/api-client';
+
+const STATUS_COLORS: Record<TaskStatus, string> = {
+  not_started: 'bg-zinc-500',
+  in_progress: 'bg-blue-400',
+  intake: 'bg-purple-400',
+  research: 'bg-cyan-400',
+  drafting: 'bg-violet-400',
+  review: 'bg-amber-400',
+  testing: 'bg-orange-400',
+  client_input: 'bg-teal-400',
+  awaiting_approval: 'bg-amber-400',
+  done: 'bg-emerald-400',
+  cancelled: 'bg-zinc-600',
+  blocked: 'bg-red-400',
+  planning: 'bg-pink-400',
+};
+
+function StatusDot({ status }: { status: TaskStatus }) {
+  return <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_COLORS[status] ?? 'bg-zinc-600'}`} />;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -16,24 +38,42 @@ export default function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [tRes, aRes] = await Promise.all([
-          fetch('/api/tasks?workspace_id=default', { credentials: 'include' }),
-          fetch('/api/agents', { credentials: 'include' }),
-        ]);
-        if (tRes.ok) setTasks(await tRes.json());
-        if (aRes.ok) setAgents(await aRes.json());
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+  // SSE for real-time task updates (reduces polling dependency)
+  const handleSSE = useCallback((event: SSEEvent) => {
+    if (event.type === 'task_updated' && event.payload) {
+      const updated = event.payload as Task;
+      setTasks(prev => {
+        const exists = prev.some(t => t.id === updated.id);
+        if (exists) {
+          return prev.map(t => t.id === updated.id ? updated : t);
+        }
+        return prev;
+      });
     }
-    load();
-    const i = setInterval(load, 30000);
-    return () => clearInterval(i);
+    if (event.type === 'task_created' && event.payload) {
+      setTasks(prev => [event.payload as Task, ...prev]);
+    }
   }, []);
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400" /></div>;
+  useSSE(handleSSE);
+
+  const load = useCallback(async () => {
+    try {
+      const [{ items: tasks }, agents] = await Promise.all([
+        api.get<{ items: Task[]; count: number }>('/tasks?workspace_id=default'),
+        api.get<Agent[]>('/agents'),
+      ]);
+      setTasks(tasks);
+      setAgents(agents);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <div className="flex h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2" style={{ borderColor: 'var(--mc-border)', borderTopColor: 'var(--mc-accent)' }} /></div>;
 
   const c = { active: tasks.filter(t => t.status === 'in_progress').length, review: tasks.filter(t => t.status === 'awaiting_approval').length, blocked: tasks.filter(t => t.status === 'blocked').length, done: tasks.filter(t => t.status === 'done').length };
   const urgent = tasks.filter(t => t.priority === 'urgent' && t.status !== 'done');
@@ -44,7 +84,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-zinc-400 mt-1">Lex Legal overview — {tasks.length} total cases</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--mc-text-secondary)' }}>Lex Legal overview — {tasks.length} total cases</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={() => router.push('/clients?new=1')}>
@@ -90,7 +130,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-1">{recent.map(t => (
               <Link key={t.id} href={`/case/${t.id}`} className="flex items-center gap-3 rounded-md p-2 hover:bg-zinc-800/50 transition-colors group">
-                <div className={`h-2 w-2 rounded-full shrink-0 ${{ not_started: 'bg-zinc-500', in_progress: 'bg-blue-400', blocked: 'bg-red-400', awaiting_approval: 'bg-amber-400', done: 'bg-emerald-400' }[t.status] || 'bg-zinc-600'}`} />
+                <StatusDot status={t.status} />
                 <span className="text-sm font-medium truncate flex-1 group-hover:text-blue-400 transition-colors">{t.title}</span>
                 {t.assigned_agent && <span className="text-xs text-zinc-500">{t.assigned_agent.avatar_emoji} {t.assigned_agent.name}</span>}
                 {t.priority === 'urgent' && <Badge variant="destructive">urgent</Badge>}

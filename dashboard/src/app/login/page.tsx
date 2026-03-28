@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { Scale, Lock, AlertCircle } from "lucide-react";
+import { useState, useEffect, FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { Scale, Lock, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +10,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // If already authenticated, redirect to dashboard immediately
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(res => { if (res.ok) router.push('/'); })
+      .catch(() => {});
+  }, [router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -19,13 +26,16 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email: username, password }),
       });
+      const data = await res.json();
       if (res.ok) {
-        router.push("/");
-        router.refresh();
+        // Small delay so cookie is set before navigation
+        setTimeout(() => {
+          router.push("/");
+          router.refresh();
+        }, 100);
       } else {
-        const data = await res.json();
         setError(data.error || "Invalid credentials");
       }
     } catch {
@@ -55,13 +65,13 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Username</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Email</label>
             <input
-              type="text"
+              type="email"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full h-10 rounded-lg border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 transition-colors"
-              placeholder="Username"
+              placeholder="admin@example.com"
               autoFocus
               required
             />

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, ChevronRight, RefreshCw, User, Send, Loader2 } from 'lucide-react';
+import { ui } from '@/lib/messages';
+import { api } from '@/lib/api-client';
 
 interface Session {
   key: string;
@@ -50,12 +52,9 @@ export function AgentChatPanel() {
 
   const loadSessions = async () => {
     try {
-      const res = await fetch('/api/openclaw/status');
-      if (res.ok) {
-        const data = await res.json();
-        const sess = data.sessions?.sessions ?? data.sessions ?? [];
-        setSessions(Array.isArray(sess) ? sess : []);
-      }
+      const data = await api.get<{ sessions?: Session[] }>('/openclaw/status');
+      const sess = data.sessions ?? [];
+      setSessions(Array.isArray(sess) ? sess : []);
     } catch { setSessions([]); }
   };
 
@@ -63,15 +62,8 @@ export function AgentChatPanel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/openclaw/chat?sessionKey=${encodeURIComponent(sessionKey)}&limit=50`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages ?? []);
-      } else {
-        const err = await res.json();
-        setError(err.error || 'Failed to load chat');
-        setMessages([]);
-      }
+      const data = await api.get<{ messages?: { role: string; content: string | unknown }[] }>(`/openclaw/chat?sessionKey=${encodeURIComponent(sessionKey)}&limit=50`);
+      setMessages(data.messages ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setMessages([]);
@@ -82,11 +74,7 @@ export function AgentChatPanel() {
     if (!msgInput.trim() || !selectedKey) return;
     setSending(true);
     try {
-      await fetch('/api/openclaw/chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionKey: selectedKey, message: msgInput }),
-      });
+      await api.post('/openclaw/chat/send', { sessionKey: selectedKey, message: msgInput });
       setMsgInput('');
       setTimeout(() => loadChat(selectedKey), 2000);
     } catch (e) { console.error(e); }
@@ -124,7 +112,7 @@ export function AgentChatPanel() {
           <div className="p-2 text-xs text-mc-text-secondary uppercase">Agenci</div>
           <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
             {sessions.length === 0 ? (
-              <div className="text-xs text-mc-text-secondary p-2">Brak sesji</div>
+              <div className="text-xs text-mc-text-secondary p-2">{ui.agents.noSessions}</div>
             ) : (
               sessions.map((s) => {
                 const info = getAgentInfo(s.key);
@@ -155,11 +143,11 @@ export function AgentChatPanel() {
               </div>
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-2">
                 {loading && messages.length === 0 ? (
-                  <div className="text-center py-4 text-mc-text-secondary text-sm"><Loader2 className="w-4 h-4 animate-spin inline mr-1" />Ładowanie...</div>
+                  <div className="text-center py-4 text-mc-text-secondary text-sm"><Loader2 className="w-4 h-4 animate-spin inline mr-1" />{ui.processing.loadingMessages}</div>
                 ) : error ? (
                   <div className="text-center py-4 text-mc-accent-red text-sm">{error}</div>
                 ) : messages.length === 0 ? (
-                  <div className="text-center py-4 text-mc-text-secondary text-sm">Brak wiadomości</div>
+                  <div className="text-center py-4 text-mc-text-secondary text-sm">{ui.empty.noMessages}</div>
                 ) : (
                   messages.map((m, i) => {
                     const text = typeof m.content === 'string'

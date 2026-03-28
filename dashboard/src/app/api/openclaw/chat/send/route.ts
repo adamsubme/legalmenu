@@ -4,14 +4,13 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getOpenClawClient } from '@/lib/openclaw/client';
+import { parseRequest, sendOpenClawMessageSchema } from '@/lib/validation';
+import { requireOpenClawAuth, mapOpenClawError } from '@/lib/openclaw/auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const { sessionKey, message } = await request.json();
-
-    if (!sessionKey || !message) {
-      return NextResponse.json({ error: 'sessionKey and message are required' }, { status: 400 });
-    }
+    await requireOpenClawAuth(request);
+    const body = await parseRequest(request, sendOpenClawMessageSchema);
 
     const client = getOpenClawClient();
     if (!client.isConnected()) {
@@ -23,17 +22,13 @@ export async function POST(request: NextRequest) {
     }
 
     await client.call('chat.send', {
-      sessionKey,
-      message,
+      sessionKey:     body.sessionKey,
+      message:        body.message,
       idempotencyKey: `mc-send-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error('Failed to send message:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
+    return mapOpenClawError(error);
   }
 }

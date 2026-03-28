@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listClients, createClient, getClient, getClientStats } from '@/lib/db/clients';
-import type { CreateClientRequest, ClientWithStats } from '@/lib/types';
+import { listClients, createClient, getClientStats } from '@/lib/db/clients';
+import { parseRequest, createClientSchema } from '@/lib/validation';
+import type { ClientWithStats } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
-// GET /api/clients - List all clients
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -10,35 +12,28 @@ export async function GET(request: NextRequest) {
 
     const clients = listClients(search);
 
-    // Add stats to each client
     const clientsWithStats: ClientWithStats[] = clients.map((client) => {
       const stats = getClientStats(client.id);
-      return {
-        ...client,
-        ...stats,
-      };
+      return { ...client, ...stats };
     });
 
     return NextResponse.json(clientsWithStats);
   } catch (error) {
-    console.error('Failed to fetch clients:', error);
-    return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 });
+    logger.error({ event: 'clients_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch clients') }, { status: 500 });
   }
 }
 
-// POST /api/clients - Create a new client
 export async function POST(request: NextRequest) {
   try {
-    const body: CreateClientRequest = await request.json();
-
-    if (!body.name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
-    }
-
+    const body = await parseRequest(request, createClientSchema);
     const client = createClient(body);
     return NextResponse.json(client, { status: 201 });
   } catch (error) {
-    console.error('Failed to create client:', error);
-    return NextResponse.json({ error: 'Failed to create client' }, { status: 500 });
+    if (error instanceof Error && error.name === 'ValidationError') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    logger.error({ event: 'client_create_failed' }, error);
+    return NextResponse.json({ error: api.internalError('create client') }, { status: 500 });
   }
 }

@@ -7,6 +7,7 @@ import { Zap, Settings, ChevronLeft, LayoutGrid } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { format } from 'date-fns';
 import type { Workspace } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 interface HeaderProps {
   workspace?: Workspace;
@@ -27,11 +28,8 @@ export function Header({ workspace }: HeaderProps) {
   useEffect(() => {
     const loadSubAgentCount = async () => {
       try {
-        const res = await fetch('/api/openclaw/sessions?session_type=subagent&status=active');
-        if (res.ok) {
-          const sessions = await res.json();
-          setActiveSubAgents(sessions.length);
-        }
+        const sessions = await api.get<{ length: number }[]>('/openclaw/sessions?session_type=subagent&status=active');
+        setActiveSubAgents(Array.isArray(sessions) ? sessions.length : 0);
       } catch (error) {
         console.error('Failed to load sub-agent count:', error);
       }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import type { PlanningQuestion, PlanningCategory } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 // Generate markdown spec from answered questions
 function generateSpecMarkdown(task: { title: string; description?: string }, questions: PlanningQuestion[]): string {
@@ -70,7 +72,7 @@ export async function POST(
     // Get task
     const task = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { id: string; title: string; description?: string; status: string } | undefined;
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
     // Check if already locked
@@ -79,7 +81,7 @@ export async function POST(
     ).get(taskId);
 
     if (existingSpec) {
-      return NextResponse.json({ error: 'Spec already locked' }, { status: 400 });
+      return NextResponse.json({ error: api.planning.specLocked }, { status: 400 });
     }
 
     // Get all questions
@@ -91,7 +93,7 @@ export async function POST(
     const unanswered = questions.filter(q => !q.answer);
     if (unanswered.length > 0) {
       return NextResponse.json({ 
-        error: 'All questions must be answered before locking',
+        error: api.planning.questionsUnanswered,
         unanswered: unanswered.length
       }, { status: 400 });
     }
@@ -122,8 +124,8 @@ export async function POST(
     // Log activity
     const activityId = crypto.randomUUID();
     getDb().prepare(`
-      INSERT INTO task_activities (id, task_id, activity_type, message)
-      VALUES (?, ?, 'status_changed', 'Planning complete - spec locked and moved to inbox')
+      INSERT INTO task_activities (id, task_id, activity_type, message, created_at)
+      VALUES (?, ?, 'status_changed', 'Planning complete - spec locked and moved to inbox', datetime('now'))
     `).run(activityId, taskId);
 
     // Get the created spec
@@ -137,7 +139,7 @@ export async function POST(
       specMarkdown
     });
   } catch (error) {
-    console.error('Failed to approve spec:', error);
-    return NextResponse.json({ error: 'Failed to approve spec' }, { status: 500 });
+    logger.error({ event: 'spec_approve_failed' }, error);
+    return NextResponse.json({ error: api.internalError('approve spec') }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { timeAgo } from '@/lib/utils';
 import { FileText, Upload, Link2, StickyNote, Search, Paperclip, ExternalLink, Folder } from 'lucide-react';
 import Link from 'next/link';
+import { api } from '@/lib/api-client';
 
 interface DocEntry {
   id: string;
@@ -31,20 +32,15 @@ export default function DocumentsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const tRes = await fetch('/api/tasks?workspace_id=default');
-        if (!tRes.ok) return;
-        const tasks = await tRes.json();
+        const { items: tasks } = await api.get<{ items: { id: string; title: string }[]; count: number }>('/tasks?workspace_id=default');
         const allDocs: DocEntry[] = [];
 
         for (const task of tasks) {
           try {
-            const aRes = await fetch(`/api/tasks/${task.id}/attachments`);
-            if (aRes.ok) {
-              const atts = await aRes.json();
-              if (Array.isArray(atts)) {
-                for (const att of atts) {
-                  allDocs.push({ ...att, task_title: task.title });
-                }
+            const atts = await api.get<DocEntry[]>(`/tasks/${task.id}/attachments`);
+            if (Array.isArray(atts)) {
+              for (const att of atts) {
+                allDocs.push({ ...att, task_title: task.title });
               }
             }
           } catch {}

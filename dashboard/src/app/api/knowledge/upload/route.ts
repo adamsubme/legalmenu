@@ -4,6 +4,8 @@ import { run } from '@/lib/db';
 import { verifySession } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +15,7 @@ const UPLOAD_DIR = '/app/attachments/knowledge';
 export async function POST(request: NextRequest) {
   const session = await verifySession(request);
   if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: api.unauthorized }, { status: 401 });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
       status: attachRes.ok ? 'indexed' : 'failed',
     });
   } catch (e) {
-    console.error('Knowledge upload failed:', e);
+    logger.error({ event: 'knowledge_upload_failed' }, e);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }

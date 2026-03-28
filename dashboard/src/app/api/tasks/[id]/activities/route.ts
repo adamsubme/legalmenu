@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import type { TaskActivity } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/tasks/[id]/activities
@@ -23,8 +25,9 @@ export async function GET(
     // Get activities with agent info
     const activities = db.prepare(`
       SELECT 
-        a.*,
-        ag.id as agent_id,
+        a.id, a.task_id, a.activity_type, a.message, a.metadata, a.created_at,
+        a.agent_id as activity_agent_id,
+        ag.id as joined_agent_id,
         ag.name as agent_name,
         ag.avatar_emoji as agent_avatar_emoji
       FROM task_activities a
@@ -37,13 +40,13 @@ export async function GET(
     const result: TaskActivity[] = activities.map(row => ({
       id: row.id,
       task_id: row.task_id,
-      agent_id: row.agent_id,
+      agent_id: row.activity_agent_id,
       activity_type: row.activity_type,
       message: row.message,
       metadata: row.metadata,
       created_at: row.created_at,
-      agent: row.agent_id ? {
-        id: row.agent_id,
+      agent: row.activity_agent_id ? {
+        id: row.activity_agent_id,
         name: row.agent_name,
         avatar_emoji: row.agent_avatar_emoji,
         role: '',
@@ -58,9 +61,9 @@ export async function GET(
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error('Error fetching activities:', error);
+    logger.error({ event: 'activities_fetch_failed' }, error);
     return NextResponse.json(
-      { error: 'Failed to fetch activities' },
+      { error: api.internalError('fetch activities') },
       { status: 500 }
     );
   }
@@ -82,7 +85,7 @@ export async function POST(
 
     if (!activity_type || !message) {
       return NextResponse.json(
-        { error: 'activity_type and message are required' },
+        { error: api.activities.required },
         { status: 400 }
       );
     }
@@ -106,8 +109,9 @@ export async function POST(
     // Get the created activity with agent info
     const activity = db.prepare(`
       SELECT 
-        a.*,
-        ag.id as agent_id,
+        a.id, a.task_id, a.activity_type, a.message, a.metadata, a.created_at,
+        a.agent_id as activity_agent_id,
+        ag.id as joined_agent_id,
         ag.name as agent_name,
         ag.avatar_emoji as agent_avatar_emoji
       FROM task_activities a
@@ -118,13 +122,13 @@ export async function POST(
     const result: TaskActivity = {
       id: activity.id,
       task_id: activity.task_id,
-      agent_id: activity.agent_id,
+      agent_id: activity.activity_agent_id,
       activity_type: activity.activity_type,
       message: activity.message,
       metadata: activity.metadata,
       created_at: activity.created_at,
-      agent: activity.agent_id ? {
-        id: activity.agent_id,
+      agent: activity.activity_agent_id ? {
+        id: activity.activity_agent_id,
         name: activity.agent_name,
         avatar_emoji: activity.agent_avatar_emoji,
         role: '',
@@ -145,9 +149,9 @@ export async function POST(
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    console.error('Error creating activity:', error);
+    logger.error({ event: 'activity_create_failed' }, error);
     return NextResponse.json(
-      { error: 'Failed to create activity' },
+      { error: api.internalError('create activity') },
       { status: 500 }
     );
   }

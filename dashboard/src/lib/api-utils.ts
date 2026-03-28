@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { logger } from './logger';
 
 /**
  * Standard API error response
@@ -64,7 +65,7 @@ export function withErrorHandling<T>(
   handler: () => Promise<NextResponse<T>>
 ): Promise<NextResponse<T | { error: string }>> {
   return handler().catch((error): NextResponse<{ error: string }> => {
-    console.error('API Error:', error);
+    logger.error({ event: 'api_utils_error' }, error);
     const message = error instanceof Error ? error.message : 'Internal server error';
     return apiError(message) as NextResponse<{ error: string }>;
   });
@@ -78,7 +79,7 @@ export async function safeParseJson<T>(request: Request): Promise<T | null> {
   try {
     return await request.json();
   } catch (error) {
-    console.error('Failed to parse JSON body:', error);
+    logger.warn({ event: 'json_parse_failed' }, error);
     return null;
   }
 }

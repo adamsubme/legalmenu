@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Plus, ArrowRight, Folder, Users, CheckSquare, Trash2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import type { WorkspaceStats } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 export function WorkspaceDashboard() {
   const [workspaces, setWorkspaces] = useState<WorkspaceStats[]>([]);
@@ -16,11 +17,8 @@ export function WorkspaceDashboard() {
 
   const loadWorkspaces = async () => {
     try {
-      const res = await fetch('/api/workspaces?stats=true');
-      if (res.ok) {
-        const data = await res.json();
-        setWorkspaces(data);
-      }
+      const data = await api.get<WorkspaceStats[]>('/workspaces?stats=true');
+      setWorkspaces(data);
     } catch (error) {
       console.error('Failed to load workspaces:', error);
     } finally {
@@ -252,18 +250,8 @@ function CreateWorkspaceModal({ onClose, onCreated }: { onClose: () => void; onC
     setError(null);
 
     try {
-      const res = await fetch('/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), icon }),
-      });
-
-      if (res.ok) {
-        onCreated();
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Failed to create workspace');
-      }
+      await api.post('/workspaces', { name: name.trim(), icon });
+      onCreated();
     } catch {
       setError('Failed to create workspace');
     } finally {

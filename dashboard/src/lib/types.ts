@@ -2,7 +2,7 @@
 
 export type AgentStatus = 'standby' | 'working' | 'offline';
 
-export type TaskStatus = 'not_started' | 'in_progress' | 'done' | 'blocked' | 'awaiting_approval';
+export type TaskStatus = 'not_started' | 'in_progress' | 'intake' | 'research' | 'drafting' | 'review' | 'testing' | 'client_input' | 'awaiting_approval' | 'done' | 'cancelled' | 'blocked' | 'planning';
 
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 
@@ -128,9 +128,17 @@ export interface WorkspaceStats {
   taskCounts: {
     not_started: number;
     in_progress: number;
-    done: number;
-    blocked: number;
+    intake: number;
+    research: number;
+    drafting: number;
+    review: number;
+    testing: number;
+    client_input: number;
     awaiting_approval: number;
+    done: number;
+    cancelled: number;
+    blocked: number;
+    planning: number;
     total: number;
   };
   agentCount: number;
@@ -266,7 +274,7 @@ export interface CreateClientRequest {
   notes?: string;
 }
 
-export interface UpdateClientRequest extends Partial<CreateClientRequest> {}
+export type UpdateClientRequest = Partial<CreateClientRequest>;
 
 export interface CreateProjectRequest {
   name: string;
@@ -277,7 +285,7 @@ export interface CreateProjectRequest {
   tags?: string;
 }
 
-export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {}
+export type UpdateProjectRequest = Partial<CreateProjectRequest>;
 
 // API request/response types
 export interface CreateAgentRequest {
@@ -405,7 +413,7 @@ export interface TaskAttachment {
 // USERS & RBAC
 // ============================================
 
-export type UserRole = 'admin' | 'worker' | 'client';
+export type UserRole = 'admin' | 'mod' | 'company' | 'client';
 
 export interface User {
   id: string;

@@ -12,6 +12,7 @@
  */
 
 import { getMissionControlUrl } from './config';
+import { logger } from './logger';
 
 const MISSION_CONTROL_URL = getMissionControlUrl();
 
@@ -56,12 +57,12 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`Failed to log activity: ${error}`);
+      logger.warn({ event: 'charlie_log_activity_failed', taskId: params.taskId, error });
     } else {
-      console.log(`✓ Activity logged: ${params.message}`);
+      logger.debug({ event: 'charlie_activity_logged', taskId: params.taskId, activityType: params.activityType });
     }
   } catch (error) {
-    console.error('Error logging activity:', error);
+    logger.error({ event: 'charlie_log_activity_error', taskId: params.taskId }, error);
   }
 }
 
@@ -84,12 +85,12 @@ export async function logDeliverable(params: LogDeliverableParams): Promise<void
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`Failed to log deliverable: ${error}`);
+      logger.warn({ event: 'charlie_log_deliverable_failed', taskId: params.taskId, error });
     } else {
-      console.log(`✓ Deliverable logged: ${params.title}`);
+      logger.debug({ event: 'charlie_deliverable_logged', taskId: params.taskId, title: params.title });
     }
   } catch (error) {
-    console.error('Error logging deliverable:', error);
+    logger.error({ event: 'charlie_log_deliverable_error', taskId: params.taskId }, error);
   }
 }
 
@@ -110,12 +111,12 @@ export async function registerSubAgentSession(params: RegisterSubAgentParams): P
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`Failed to register sub-agent session: ${error}`);
+      logger.warn({ event: 'charlie_register_session_failed', taskId: params.taskId, sessionId: params.sessionId, error });
     } else {
-      console.log(`✓ Sub-agent session registered: ${params.sessionId}`);
+      logger.debug({ event: 'charlie_session_registered', taskId: params.taskId, sessionId: params.sessionId });
     }
   } catch (error) {
-    console.error('Error registering sub-agent session:', error);
+    logger.error({ event: 'charlie_register_session_error', taskId: params.taskId, sessionId: params.sessionId }, error);
   }
 }
 
@@ -136,12 +137,12 @@ export async function completeSubAgentSession(sessionId: string, summary?: strin
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`Failed to complete sub-agent session: ${error}`);
+      logger.warn({ event: 'charlie_complete_session_failed', sessionId, error });
     } else {
-      console.log(`✓ Sub-agent session completed: ${sessionId}`);
+      logger.debug({ event: 'charlie_session_completed', sessionId });
     }
   } catch (error) {
-    console.error('Error completing sub-agent session:', error);
+    logger.error({ event: 'charlie_complete_session_error', sessionId }, error);
   }
 }
 
@@ -156,7 +157,7 @@ export async function getDeliverables(taskId: string): Promise<any[]> {
     }
     return await response.json();
   } catch (error) {
-    console.error('Error fetching deliverables:', error);
+    logger.error({ event: 'charlie_fetch_deliverables_error', taskId }, error);
     return [];
   }
 }
@@ -267,7 +268,7 @@ export async function onSubAgentCompleted(params: {
  * // Before approving (review -> done):
  * const hasDeliverables = await charlie.verifyTaskHasDeliverables('task-123');
  * if (!hasDeliverables) {
- *   console.log('⚠️ Task has no deliverables - cannot approve');
+ *   logger.warn({ event: 'charlie_no_deliverables', taskId: 'task-123' }, 'Task has no deliverables — cannot approve');
  *   return;
  * }
  * ```

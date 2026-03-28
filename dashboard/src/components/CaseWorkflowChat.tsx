@@ -11,6 +11,7 @@ import {
   ArrowRight, ChevronDown, ChevronUp, Maximize2, Minimize2,
 } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
+import { ui } from '@/lib/messages';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -178,7 +179,7 @@ export function CaseWorkflowChat({ taskId }: CaseWorkflowChatProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-mc-text-secondary">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Ładowanie komunikacji agentów...
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> {ui.processing.loadingAgents}
       </div>
     );
   }
@@ -218,14 +219,14 @@ export function CaseWorkflowChat({ taskId }: CaseWorkflowChatProps) {
           <button
             onClick={loadAllSessions}
             className="p-1 rounded hover:bg-mc-bg-secondary text-mc-text-secondary"
-            title="Odśwież"
+            title={ui.tooltips.refresh}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
             className="p-1 rounded hover:bg-mc-bg-secondary text-mc-text-secondary"
-            title={expanded ? 'Minimalizuj' : 'Pełny ekran'}
+            title={expanded ? ui.tooltips.minimize : ui.tooltips.fullScreen}
           >
             {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
@@ -243,9 +244,9 @@ export function CaseWorkflowChat({ taskId }: CaseWorkflowChatProps) {
         {!activeSession || activeSession.messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-mc-text-secondary">
             <MessageSquare className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm font-medium">Brak wiadomości od {PIPELINE.find(p => p.id === activeAgent)?.name}</p>
+            <p className="text-sm font-medium">{ui.agents.noMessagesFor(PIPELINE.find(p => p.id === activeAgent)?.name ?? '')}</p>
             <p className="text-xs mt-1 opacity-70">
-              Wyślij zadanie do agenta lub poczekaj na delegację z COO
+              {ui.agents.sentToAgent}
             </p>
           </div>
         ) : (

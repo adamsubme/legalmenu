@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +19,8 @@ export async function GET(
       .all(clientId);
     return NextResponse.json(rows);
   } catch (e) {
-    console.error('[GET client files]', e);
-    return NextResponse.json({ error: 'Failed to list files' }, { status: 500 });
+    logger.error({ event: 'client_files_list_failed' }, e);
+    return NextResponse.json({ error: api.internalError('list files') }, { status: 500 });
   }
 }
 
@@ -33,14 +35,14 @@ export async function POST(
     const { attachment_type, title, file_path, file_name, file_size, file_mime, url, content } = body;
 
     if (!attachment_type || !['file', 'link', 'note'].includes(attachment_type)) {
-      return NextResponse.json({ error: 'Invalid attachment_type' }, { status: 400 });
+      return NextResponse.json({ error: api.attachments.invalidType }, { status: 400 });
     }
 
     if (attachment_type === 'file' && !file_path) {
-      return NextResponse.json({ error: 'file_path required for file type' }, { status: 400 });
+      return NextResponse.json({ error: api.attachments.filePathRequired }, { status: 400 });
     }
     if (attachment_type === 'link' && !url) {
-      return NextResponse.json({ error: 'url required for link type' }, { status: 400 });
+      return NextResponse.json({ error: api.attachments.urlRequired }, { status: 400 });
     }
 
     const id = uuidv4();
@@ -55,7 +57,7 @@ export async function POST(
     const row = db.prepare('SELECT * FROM client_attachments WHERE id = ?').get(id);
     return NextResponse.json(row, { status: 201 });
   } catch (e) {
-    console.error('[POST client files]', e);
-    return NextResponse.json({ error: 'Failed to create attachment' }, { status: 500 });
+    logger.error({ event: 'client_file_create_failed' }, e);
+    return NextResponse.json({ error: api.internalError('create attachment') }, { status: 500 });
   }
 }

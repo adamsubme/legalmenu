@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { queryAll, run } from '@/lib/db';
-import type { Event } from '@/lib/types';
+import { parseRequest, createEventSchema } from '@/lib/validation';
+import { api } from '@/lib/messages';
 
-// GET /api/events - List events (live feed)
+// GET /api/events — List events (live feed polling)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
-    const since = searchParams.get('since'); // ISO timestamp for polling
+
+    const since = searchParams.get('since');
+    const taskId = searchParams.get('task_id');
+
+    // Hard cap — prevent accidental table scans
+    const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+    const limit = Math.min(Math.max(rawLimit, 1), 200);
 
     let sql = `
       SELECT e.*, a.name as agent_name, a.avatar_emoji as agent_emoji, t.title as task_title
@@ -24,45 +30,27 @@ export async function GET(request: NextRequest) {
       params.push(since);
     }
 
+    if (taskId) {
+      sql += ' AND e.task_id = ?';
+      params.push(taskId);
+    }
+
     sql += ' ORDER BY e.created_at DESC LIMIT ?';
     params.push(limit);
 
-    const events = queryAll<Event & { agent_name?: string; agent_emoji?: string; task_title?: string }>(sql, params);
+    const events = queryAll(sql, params);
 
-    // Transform to include nested info
-    const transformedEvents = events.map((event) => ({
-      ...event,
-      agent: event.agent_id
-        ? {
-            id: event.agent_id,
-            name: event.agent_name,
-            avatar_emoji: event.agent_emoji,
-          }
-        : undefined,
-      task: event.task_id
-        ? {
-            id: event.task_id,
-            title: event.task_title,
-          }
-        : undefined,
-    }));
-
-    return NextResponse.json(transformedEvents);
+    return NextResponse.json(events);
   } catch (error) {
-    console.error('Failed to fetch events:', error);
-    return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+    console.error('[GET /api/events]', error);
+    return NextResponse.json({ error: api.internalError('fetch events') }, { status: 500 });
   }
 }
 
-// POST /api/events - Create a manual event
+// POST /api/events — Create a manual event (e.g., note_added, comment)
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    if (!body.type || !body.message) {
-      return NextResponse.json({ error: 'Type and message are required' }, { status: 400 });
-    }
-
+    const body = await parseRequest(request, createEventSchema);
     const id = uuidv4();
     const now = new Date().toISOString();
 
@@ -72,17 +60,25 @@ export async function POST(request: NextRequest) {
       [
         id,
         body.type,
-        body.agent_id || null,
-        body.task_id || null,
+        body.agent_id ?? null,
+        body.task_id ?? null,
         body.message,
         body.metadata ? JSON.stringify(body.metadata) : null,
         now,
       ]
     );
 
-    return NextResponse.json({ id, type: body.type, message: body.message, created_at: now }, { status: 201 });
+    return NextResponse.json(
+      { id, type: body.type, message: body.message, created_at: now },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error('Failed to create event:', error);
-    return NextResponse.json({ error: 'Failed to create event' }, { status: 500 });
+    console.error('[POST /api/events]', error);
+
+    if (error instanceof Error && error.name === 'ValidationError') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ error: api.internalError('create event') }, { status: 500 });
   }
 }

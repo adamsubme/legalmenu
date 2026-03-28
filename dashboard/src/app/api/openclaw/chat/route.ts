@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOpenClawClient } from '@/lib/openclaw/client';
+import { requireOpenClawAuth, mapOpenClawError } from '@/lib/openclaw/auth';
 
 // GET /api/openclaw/chat?sessionKey=agent:bull:main&limit=100
 export async function GET(request: NextRequest) {
   try {
+    await requireOpenClawAuth(request);
     const sessionKey = request.nextUrl.searchParams.get('sessionKey');
     const limit = Math.min(500, parseInt(request.nextUrl.searchParams.get('limit') || '100', 10) || 100);
 
@@ -27,10 +29,6 @@ export async function GET(request: NextRequest) {
     const messages = await client.getChatHistory(sessionKey, limit);
     return NextResponse.json({ sessionKey, messages });
   } catch (error) {
-    console.error('Failed to get chat history:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
+    return mapOpenClawError(error);
   }
 }

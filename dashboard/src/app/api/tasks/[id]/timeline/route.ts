@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listTimeline, createTimelineEvent, getTimelineSummary } from '@/lib/db/case-timeline';
 import type { CreateTimelineEventRequest, TimelineEventType } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -24,8 +26,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(events);
   } catch (error) {
-    console.error('Failed to fetch timeline:', error);
-    return NextResponse.json({ error: 'Failed to fetch timeline' }, { status: 500 });
+    logger.error({ event: 'timeline_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch timeline') }, { status: 500 });
   }
 }
 
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(event, { status: 201 });
   } catch (error) {
-    console.error('Failed to create timeline event:', error);
-    return NextResponse.json({ error: 'Failed to create timeline event' }, { status: 500 });
+    logger.error({ event: 'timeline_create_failed' }, error);
+    return NextResponse.json({ error: api.internalError('create timeline event') }, { status: 500 });
   }
 }

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, run } from '@/lib/db';
-import type { Task, Agent, OpenClawSession } from '@/lib/types';
+import { getTaskById, listTasks } from '@/lib/db/queries';
+import type { OpenClawSession } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/webhooks/agent-completion
@@ -26,16 +29,10 @@ export async function POST(request: NextRequest) {
 
     // Handle direct task_id completion
     if (body.task_id) {
-      const task = queryOne<Task & { assigned_agent_name?: string }>(
-        `SELECT t.*, a.name as assigned_agent_name
-         FROM tasks t
-         LEFT JOIN agents a ON t.assigned_agent_id = a.id
-         WHERE t.id = ?`,
-        [body.task_id]
-      );
+      const task = getTaskById(body.task_id);
 
       if (!task) {
-        return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+        return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
       }
 
       // Only move to testing if not already in testing, review, or done
@@ -83,7 +80,7 @@ export async function POST(request: NextRequest) {
       const completionMatch = body.message.match(/TASK_COMPLETE:\s*(.+)/i);
       if (!completionMatch) {
         return NextResponse.json(
-          { error: 'Invalid completion message format. Expected: TASK_COMPLETE: [summary]' },
+          { error: api.agentCompletion.invalidFormat },
           { status: 400 }
         );
       }
@@ -98,26 +95,22 @@ export async function POST(request: NextRequest) {
 
       if (!session) {
         return NextResponse.json(
-          { error: 'Session not found or inactive' },
+          { error: api.agentCompletion.sessionNotFound },
           { status: 404 }
         );
       }
 
       // Find active task for this agent
-      const task = queryOne<Task & { assigned_agent_name?: string }>(
-        `SELECT t.*, a.name as assigned_agent_name
-         FROM tasks t
-         LEFT JOIN agents a ON t.assigned_agent_id = a.id
-         WHERE t.assigned_agent_id = ? 
-           AND t.status IN ('not_started', 'in_progress')
-         ORDER BY t.updated_at DESC
-         LIMIT 1`,
-        [session.agent_id]
-      );
+      const tasks = listTasks({
+        assignedAgentId: session.agent_id,
+        status: ['not_started', 'in_progress'],
+        limit: 1,
+      });
+      const task = tasks[0];
 
       if (!task) {
         return NextResponse.json(
-          { error: 'No active task found for this agent' },
+          { error: api.agentCompletion.noActiveTask },
           { status: 404 }
         );
       }
@@ -162,11 +155,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'Invalid payload. Provide either task_id or session_id + message' },
+      { error: api.agentCompletion.invalidPayload },
       { status: 400 }
     );
   } catch (error) {
-    console.error('Agent completion webhook error:', error);
+    logger.error({ event: 'agent_completion_webhook_failed' }, error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to process completion' },
       { status: 500 }
@@ -197,7 +190,7 @@ export async function GET() {
       endpoint: '/api/webhooks/agent-completion'
     });
   } catch (error) {
-    console.error('Failed to fetch completion status:', error);
+    logger.error({ event: 'completion_status_fetch_failed' }, error);
     return NextResponse.json(
       { error: 'Failed to fetch status' },
       { status: 500 }

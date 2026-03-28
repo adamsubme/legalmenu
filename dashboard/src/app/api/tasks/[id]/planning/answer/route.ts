@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 // Helper to extract JSON from a response that might have markdown code blocks or surrounding text
 function extractJSON(text: string): object | null {
@@ -61,7 +63,7 @@ async function getMessagesFromOpenClaw(sessionKey: string): Promise<Array<{ role
     
     return messages;
   } catch (err) {
-    console.error('[Planning] Failed to get messages from OpenClaw:', err);
+    logger.error({ event: 'openclaw_messages_fetch_failed' }, err);
     return [];
   }
 }
@@ -91,7 +93,7 @@ export async function POST(
     } | undefined;
 
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
     if (!task.planning_session_key) {
@@ -174,14 +176,14 @@ If planning is complete, respond with JSON:
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const transcriptMessages = await getMessagesFromOpenClaw(task.planning_session_key!);
-      console.log('[Planning] Answer poll - API messages:', transcriptMessages.length, 'initial:', initialMsgCount);
+      logger.debug({ event: 'planning_answer_poll', messageCount: transcriptMessages.length, initialCount: initialMsgCount });
       
       // Check if there's a new assistant message
       if (transcriptMessages.length > initialMsgCount) {
         const lastAssistant = [...transcriptMessages].reverse().find(m => m.role === 'assistant');
         if (lastAssistant) {
           response = lastAssistant.content;
-          console.log('[Planning] Found new response in transcript');
+          logger.info({ event: 'planning_response_found' });
           break;
         }
       }
@@ -255,11 +257,11 @@ If planning is complete, respond with JSON:
               UPDATE tasks SET assigned_agent_id = ? WHERE id = ?
             `).run(firstAgentId, taskId);
 
-            console.log(`[Planning] Auto-assigned task ${taskId} to agent ${firstAgentId}`);
+            logger.info({ event: 'planning_auto_assign', taskId, agentId: firstAgentId });
 
             // Trigger dispatch - use localhost since we're in the same process
             const dispatchUrl = `http://localhost:${process.env.PORT || 3000}/api/tasks/${taskId}/dispatch`;
-            console.log(`[Planning] Triggering dispatch: ${dispatchUrl}`);
+            logger.info({ event: 'planning_triggering_dispatch', taskId, dispatchUrl });
             
             try {
               const dispatchRes = await fetch(dispatchUrl, {
@@ -269,13 +271,13 @@ If planning is complete, respond with JSON:
               
               if (dispatchRes.ok) {
                 const dispatchData = await dispatchRes.json();
-                console.log(`[Planning] Dispatch successful:`, dispatchData);
+                logger.info({ event: 'planning_dispatch_success', taskId, dispatchData });
               } else {
                 const errorText = await dispatchRes.text();
-                console.error(`[Planning] Dispatch failed (${dispatchRes.status}):`, errorText);
+                logger.error({ event: 'planning_dispatch_failed', taskId, status: dispatchRes.status, error: errorText });
               }
             } catch (err) {
-              console.error('[Planning] Auto-dispatch error:', err);
+              logger.error({ event: 'planning_auto_dispatch_failed', taskId }, err);
             }
           }
 
@@ -321,7 +323,7 @@ If planning is complete, respond with JSON:
       note: 'Answer submitted, waiting for response.',
     });
   } catch (error) {
-    console.error('Failed to submit answer:', error);
+    logger.error({ event: 'planning_answer_submit_failed' }, error);
     return NextResponse.json({ error: 'Failed to submit answer: ' + (error as Error).message }, { status: 500 });
   }
 }

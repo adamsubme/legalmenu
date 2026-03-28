@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,7 +88,7 @@ export async function GET() {
         : undefined,
     });
   } catch (e) {
-    console.error('Cost calculation failed:', e);
+    logger.error({ event: 'cost_calculation_failed' }, e);
     return NextResponse.json({ error: 'Failed to read cost data', total_cost: 0, by_agent: {}, by_model: [] });
   }
 }

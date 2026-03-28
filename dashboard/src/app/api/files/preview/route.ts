@@ -6,12 +6,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   const filePath = request.nextUrl.searchParams.get('path');
 
   if (!filePath) {
-    return NextResponse.json({ error: 'path is required' }, { status: 400 });
+    return NextResponse.json({ error: api.attachments.pathRequired }, { status: 400 });
   }
 
   // Only allow HTML files
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!existsSync(normalizedPath)) {
-    return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    return NextResponse.json({ error: api.deliverables.fileNotFound }, { status: 404 });
   }
 
   try {
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[FILE] Error reading file:', error);
+    logger.error({ event: 'file_preview_read_failed' }, error);
     return NextResponse.json({ error: 'Failed to read file' }, { status: 500 });
   }
 }

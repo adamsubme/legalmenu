@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { dispatchTask } from '@/lib/dispatch';
 import type { Task } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,7 +19,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const task = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
     const result = await dispatchTask(id);
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       task: updatedTask,
     });
   } catch (error) {
-    console.error('Failed to dispatch task:', error);
+    logger.error({ event: 'task_dispatch_failed' }, error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to dispatch task' },
       { status: 500 }

@@ -4,6 +4,7 @@
  */
 
 import type { SSEEvent } from './types';
+import { logger } from './logger';
 
 // Store active SSE client connections
 const clients = new Set<ReadableStreamDefaultController>();
@@ -37,12 +38,12 @@ export function broadcast(event: SSEEvent): void {
       client.enqueue(encoded);
     } catch (error) {
       // Client disconnected, remove it
-      console.error('Failed to send SSE event to client:', error);
+      logger.warn({ event: 'sse_client_send_failed' }, error);
       clients.delete(client);
     }
   }
 
-  console.log(`[SSE] Broadcast ${event.type} to ${clients.size} client(s)`);
+  logger.debug({ event: 'sse_broadcast', type: event.type, clientCount: clients.size });
 }
 
 /**

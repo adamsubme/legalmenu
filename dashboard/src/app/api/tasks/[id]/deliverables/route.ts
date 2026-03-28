@@ -9,6 +9,8 @@ import { broadcast } from '@/lib/events';
 import { existsSync } from 'fs';
 import path from 'path';
 import type { TaskDeliverable } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/tasks/[id]/deliverables
@@ -31,9 +33,9 @@ export async function GET(
 
     return NextResponse.json(deliverables);
   } catch (error) {
-    console.error('Error fetching deliverables:', error);
+    logger.error({ event: 'deliverables_fetch_failed' }, error);
     return NextResponse.json(
-      { error: 'Failed to fetch deliverables' },
+      { error: api.internalError('fetch deliverables') },
       { status: 500 }
     );
   }
@@ -68,7 +70,7 @@ export async function POST(
       normalizedPath = path.replace(/^~/, process.env.HOME || '');
       fileExists = existsSync(normalizedPath);
       if (!fileExists) {
-        console.warn(`[DELIVERABLE] Warning: File does not exist: ${normalizedPath}`);
+        logger.warn({ event: 'deliverable_file_not_found', path: normalizedPath });
       }
     }
 
@@ -114,9 +116,9 @@ export async function POST(
 
     return NextResponse.json(deliverable, { status: 201 });
   } catch (error) {
-    console.error('Error creating deliverable:', error);
+    logger.error({ event: 'deliverable_create_failed' }, error);
     return NextResponse.json(
-      { error: 'Failed to create deliverable' },
+      { error: api.internalError('create deliverable') },
       { status: 500 }
     );
   }

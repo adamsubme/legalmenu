@@ -14,6 +14,7 @@ import { migration012 } from './migration-012';
 import { migration013 } from './migration-013';
 import { migration014 } from './migration-014';
 import { migration015 } from './migration-015';
+import { migration016 } from './migration-016';
 
 interface Migration {
   id: string;
@@ -280,6 +281,8 @@ const migrations: Migration[] = [
   migration014,
 
   migration015,
+
+  migration016,
 ];
 
 /**

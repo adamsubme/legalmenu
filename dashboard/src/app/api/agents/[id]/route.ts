@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, run } from '@/lib/db';
-import type { Agent, UpdateAgentRequest } from '@/lib/types';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { parseRequest, updateAgentSchema } from '@/lib/validation';
+import type { Agent } from '@/lib/types';
+import { writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 const WORKSPACE_ROOT = process.env.VENTURE_STUDIO_PATH || join(process.cwd(), '..', 'venture-studio');
 
@@ -37,7 +40,7 @@ function syncToFilesystem(agentName: string, field: string, content: string) {
   
   if (existsSync(dirPath)) {
     writeFileSync(filePath, content, 'utf-8');
-    console.log(`[Sync] Wrote ${filePath} (${content.length} chars)`);
+    logger.info({ event: 'agent_file_synced', path: filePath, size: content.length });
   }
 }
 
@@ -56,8 +59,8 @@ export async function GET(
 
     return NextResponse.json(agent);
   } catch (error) {
-    console.error('Failed to fetch agent:', error);
-    return NextResponse.json({ error: 'Failed to fetch agent' }, { status: 500 });
+    logger.error({ event: 'agent_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch agent') }, { status: 500 });
   }
 }
 
@@ -68,7 +71,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const body: UpdateAgentRequest = await request.json();
+    const body = await parseRequest(request, updateAgentSchema);
 
     const existing = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
     if (!existing) {
@@ -98,7 +101,6 @@ export async function PATCH(
       updates.push('status = ?');
       values.push(body.status);
 
-      // Log status change event
       const now = new Date().toISOString();
       run(
         `INSERT INTO events (id, type, agent_id, message, created_at)
@@ -138,7 +140,7 @@ export async function PATCH(
     run(`UPDATE agents SET ${updates.join(', ')} WHERE id = ?`, values);
 
     const agent = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
-    
+
     if (agent) {
       const mdFields = ['soul_md', 'user_md', 'agents_md', 'heartbeat_md'] as const;
       for (const field of mdFields) {
@@ -150,8 +152,8 @@ export async function PATCH(
 
     return NextResponse.json(agent);
   } catch (error) {
-    console.error('Failed to update agent:', error);
-    return NextResponse.json({ error: 'Failed to update agent' }, { status: 500 });
+    logger.error({ event: 'agent_update_failed' }, error);
+    return NextResponse.json({ error: api.internalError('update agent') }, { status: 500 });
   }
 }
 
@@ -182,7 +184,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete agent:', error);
-    return NextResponse.json({ error: 'Failed to delete agent' }, { status: 500 });
+    logger.error({ event: 'agent_delete_failed' }, error);
+    return NextResponse.json({ error: api.internalError('delete agent') }, { status: 500 });
   }
 }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
+import { api } from '@/lib/messages';
 // File system imports removed - using OpenClaw API instead
 
-// Planning session prefix for OpenClaw (must match agent:main: format)
-const PLANNING_SESSION_PREFIX = 'agent:main:planning:';
+// Planning session prefix for OpenClaw (unified mc: prefix to match dispatch format)
+const PLANNING_SESSION_PREFIX = 'mc:planning:';
 
 // Helper to extract JSON from a response that might have markdown code blocks or surrounding text
 function extractJSON(text: string): object | null {
@@ -98,14 +99,24 @@ export async function GET(
     } | undefined;
     
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
-    // Parse planning messages from JSON
-    const messages = task.planning_messages ? JSON.parse(task.planning_messages) : [];
-    
+    // Parse planning messages from JSON (safe with null/undefined/empty string)
+    let messages: Array<{ role: string; content?: string; timestamp?: number }> = [];
+    if (task.planning_messages) {
+      try {
+        const parsed = JSON.parse(task.planning_messages);
+        messages = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        messages = [];
+      }
+    }
+
     // Find the latest question (last assistant message with question structure)
-    let lastAssistantMessage = [...messages].reverse().find((m: { role: string }) => m.role === 'assistant');
+    let lastAssistantMessage = messages.length > 0
+      ? [...messages].reverse().find((m) => m.role === 'assistant')
+      : undefined;
     let currentQuestion = null;
     
     // If no assistant response in DB but session exists, check OpenClaw for new messages
@@ -124,12 +135,21 @@ export async function GET(
       }
     }
     
-    if (lastAssistantMessage) {
+    if (lastAssistantMessage && lastAssistantMessage.content) {
       // Use extractJSON to handle code blocks and surrounding text
       const parsed = extractJSON(lastAssistantMessage.content);
       if (parsed && 'question' in parsed) {
         currentQuestion = parsed;
       }
+    }
+
+    let spec = null;
+    let agents = null;
+    if (task.planning_spec) {
+      try { spec = JSON.parse(task.planning_spec); } catch { /* ignore */ }
+    }
+    if (task.planning_agents) {
+      try { agents = JSON.parse(task.planning_agents); } catch { /* ignore */ }
     }
 
     return NextResponse.json({
@@ -138,13 +158,13 @@ export async function GET(
       messages,
       currentQuestion,
       isComplete: !!task.planning_complete,
-      spec: task.planning_spec ? JSON.parse(task.planning_spec) : null,
-      agents: task.planning_agents ? JSON.parse(task.planning_agents) : null,
+      spec,
+      agents,
       isStarted: messages.length > 0,
     });
   } catch (error) {
     console.error('Failed to get planning state:', error);
-    return NextResponse.json({ error: 'Failed to get planning state' }, { status: 500 });
+    return NextResponse.json({ error: api.internalError('get planning state') }, { status: 500 });
   }
 }
 
@@ -167,7 +187,7 @@ export async function POST(
     } | undefined;
     
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
     // Check if planning already started

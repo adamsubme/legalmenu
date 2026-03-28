@@ -18,6 +18,8 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import * as csstree from 'css-tree';
 import type { Task, TaskDeliverable } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 interface CssValidationError {
   message: string;
@@ -83,7 +85,7 @@ export async function POST(
     // Get task
     const task = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [taskId]);
     if (!task) {
-      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
     }
 
     // Get all deliverables (file and url types)
@@ -94,7 +96,7 @@ export async function POST(
 
     if (deliverables.length === 0) {
       return NextResponse.json(
-        { error: 'No testable deliverables found (file or url types)' },
+        { error: api.deliverables.noTestable },
         { status: 400 }
       );
     }
@@ -140,6 +142,7 @@ export async function POST(
       ? `Automated test passed - ${results.length} deliverable(s) verified, no issues found`
       : `Automated test failed - ${summary}`;
 
+    const now = new Date().toISOString();
     run(
       `INSERT INTO task_activities (id, task_id, activity_type, message, metadata, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -157,12 +160,11 @@ export async function POST(
           resourceErrors: r.resourceErrors.length,
           screenshot: r.screenshotPath
         })) }),
-        new Date().toISOString()
+        now
       ]
     );
 
     // Update task status based on results
-    const now = new Date().toISOString();
     let newStatus: string | undefined;
 
     if (passed) {
@@ -217,9 +219,9 @@ export async function POST(
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Test execution error:', error);
+    logger.error({ event: 'test_execution_failed' }, error);
     return NextResponse.json(
-      { error: 'Test execution failed', details: String(error) },
+      { error: api.deliverables.testExecution, details: String(error) },
       { status: 500 }
     );
   }
@@ -317,7 +319,7 @@ async function testDeliverable(
           resourceErrors: [],
           screenshotPath: null,
           duration: Date.now() - startTime,
-          error: 'File not found'
+          error: api.deliverables.fileNotFound
         };
       }
 
@@ -338,7 +340,7 @@ async function testDeliverable(
           resourceErrors: [],
           screenshotPath: null,
           duration: Date.now() - startTime,
-          error: 'Skipped - not an HTML file'
+          error: api.deliverables.skipped
         };
       }
 
@@ -371,7 +373,7 @@ async function testDeliverable(
             resourceErrors: [],
             screenshotPath: null,
             duration: Date.now() - startTime,
-            error: 'Path not found'
+            error: api.deliverables.pathNotFound
           };
         }
         testUrl = `file://${testPath}`;
@@ -492,7 +494,7 @@ export async function GET(
 
   const task = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [taskId]);
   if (!task) {
-    return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    return NextResponse.json({ error: api.tasks.notFound }, { status: 404 });
   }
 
   const deliverables = queryAll<TaskDeliverable>(

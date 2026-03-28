@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Save, Trash2, Upload } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Agent, AgentStatus } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 interface AgentModalProps {
   agent?: Agent;
@@ -39,31 +40,23 @@ export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: Agen
     setIsSubmitting(true);
 
     try {
-      const url = agent ? `/api/agents/${agent.id}` : '/api/agents';
-      const method = agent ? 'PATCH' : 'POST';
+      const payload = {
+        ...form,
+        workspace_id: workspaceId || agent?.workspace_id || 'default',
+      };
+      const savedAgent = agent
+        ? await api.patch<Agent>(`/agents/${agent.id}`, payload)
+        : await api.post<Agent>('/agents', payload);
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          workspace_id: workspaceId || agent?.workspace_id || 'default',
-        }),
-      });
-
-      if (res.ok) {
-        const savedAgent = await res.json();
-        if (agent) {
-          updateAgent(savedAgent);
-        } else {
-          addAgent(savedAgent);
-          // Notify parent if callback provided (e.g., for inline agent creation)
-          if (onAgentCreated) {
-            onAgentCreated(savedAgent.id);
-          }
+      if (agent) {
+        updateAgent(savedAgent);
+      } else {
+        addAgent(savedAgent);
+        if (onAgentCreated) {
+          onAgentCreated(savedAgent.id);
         }
-        onClose();
       }
+      onClose();
     } catch (error) {
       console.error('Failed to save agent:', error);
     } finally {
@@ -75,15 +68,12 @@ export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: Agen
     if (!agent || !confirm(`Delete ${agent.name}?`)) return;
 
     try {
-      const res = await fetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        // Remove from store
-        useMissionControl.setState((state) => ({
-          agents: state.agents.filter((a) => a.id !== agent.id),
-          selectedAgent: state.selectedAgent?.id === agent.id ? null : state.selectedAgent,
-        }));
-        onClose();
-      }
+      await api.delete(`/agents/${agent.id}`);
+      useMissionControl.setState((state) => ({
+        agents: state.agents.filter((a) => a.id !== agent.id),
+        selectedAgent: state.selectedAgent?.id === agent.id ? null : state.selectedAgent,
+      }));
+      onClose();
     } catch (error) {
       console.error('Failed to delete agent:', error);
     }
@@ -93,8 +83,7 @@ export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: Agen
     setIsDeploying(true);
     setDeployStatus(null);
     try {
-      const res = await fetch('/api/deploy', { method: 'POST' });
-      const data = await res.json();
+      const data = await api.post<{ success: boolean; error?: string }>('/deploy');
       if (data.success) {
         setDeployStatus('Deployed to server');
         setTimeout(() => setDeployStatus(null), 4000);

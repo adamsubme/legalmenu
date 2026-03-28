@@ -11,6 +11,7 @@ import { CaseDocuments } from './CaseDocuments';
 import { CaseWorkflowChat } from './CaseWorkflowChat';
 import { AgentModal } from './AgentModal';
 import type { Task, TaskPriority, TaskStatus } from '@/lib/types';
+import { STATUS_LABELS } from '@/lib/utils';
 
 type TabType = 'overview' | 'planning' | 'chat' | 'activity' | 'deliverables' | 'documents' | 'sessions';
 
@@ -245,7 +246,7 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
               >
                 {statuses.map((s) => (
                   <option key={s} value={s}>
-                    {{ not_started: 'Not started', in_progress: 'In progress', done: 'Done', blocked: 'Blocked', awaiting_approval: 'Awaiting Approval' }[s]}
+                    {STATUS_LABELS[s] ?? s}
                   </option>
                 ))}
               </select>

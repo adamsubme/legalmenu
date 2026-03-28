@@ -1,66 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUser, updateUser, deleteUser } from '@/lib/db/users';
-import type { UpdateUserRequest } from '@/lib/types';
+import { verifySession } from '@/lib/auth';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
-interface RouteContext {
-  params: Promise<{ id: string }>;
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const session = await verifySession(request);
+  if (!session) {
+    return NextResponse.json({ error: api.unauthorized }, { status: 401 });
+  }
+
+  const user = getUser(params.id);
+  if (!user) {
+      return NextResponse.json({ error: api.users.notFound }, { status: 404 });
+  }
+
+  // Users can see their own data, admins can see all
+  if (session.userId !== params.id && session.role !== 'admin') {
+    return NextResponse.json({ error: api.forbidden }, { status: 403 });
+  }
+
+  return NextResponse.json({ user });
 }
 
-// GET /api/users/[id]
-export async function GET(request: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-    const user = getUser(id);
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  const session = await verifySession(request);
+  if (!session) {
+    return NextResponse.json({ error: api.unauthorized }, { status: 401 });
+  }
 
+  // Only admin can update other users, regular users can only update themselves
+  if (session.userId !== params.id && session.role !== 'admin') {
+    return NextResponse.json({ error: api.forbidden }, { status: 403 });
+  }
+
+  try {
+    const data = await request.json();
+    const user = updateUser(params.id, data);
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ error: api.users.notFound }, { status: 404 });
     }
-
-    const { password_hash: _, ...safeUser } = user as { password_hash?: string } & ReturnType<typeof getUser>;
-    return NextResponse.json(safeUser);
+    return NextResponse.json({ success: true, user });
   } catch (error) {
-    console.error('Failed to fetch user:', error);
-    return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 });
+    logger.error({ event: 'user_update_failed' }, error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// PUT /api/users/[id]
-export async function PUT(request: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-    const body: UpdateUserRequest = await request.json();
-
-    if (body.role && !['admin', 'worker', 'client'].includes(body.role)) {
-      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
-    }
-
-    const user = updateUser(id, body);
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const { password_hash: _, ...safeUser } = user as { password_hash?: string } & ReturnType<typeof updateUser>;
-    return NextResponse.json(safeUser);
-  } catch (error) {
-    console.error('Failed to update user:', error);
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  const session = await verifySession(request);
+  if (!session || session.role !== 'admin') {
+    return NextResponse.json({ error: api.unauthorized }, { status: 401 });
   }
-}
 
-// DELETE /api/users/[id]
-export async function DELETE(request: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-    const deleted = deleteUser(id);
-
-    if (!deleted) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Failed to delete user:', error);
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
+  const user = getUser(params.id);
+  if (!user) {
+      return NextResponse.json({ error: api.users.notFound }, { status: 404 });
   }
+
+  if (user.role === 'admin') {
+    return NextResponse.json({ error: api.users.cannotDeleteAdmin }, { status: 400 });
+  }
+
+  // Soft delete - deactivate
+  updateUser(params.id, { is_active: false });
+  return NextResponse.json({ success: true });
 }

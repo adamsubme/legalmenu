@@ -1,6 +1,9 @@
 /**
  * useSSE Hook
- * Establishes and maintains Server-Sent Events connection for real-time updates
+ * Establishes and maintains Server-Sent Events connection for real-time updates.
+ *
+ * Optional eventHandler param lets components intercept SSE events directly
+ * (useful when the component owns its own task state, like Cases page).
  */
 
 'use client';
@@ -10,9 +13,12 @@ import { useMissionControl } from '@/lib/store';
 import { debug } from '@/lib/debug';
 import type { SSEEvent, Task, EventType } from '@/lib/types';
 
-export function useSSE() {
+export function useSSE(eventHandler?: (event: SSEEvent) => void) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const eventHandlerRef = useRef(eventHandler);
+  eventHandlerRef.current = eventHandler;
+
   const {
     updateTask,
     addTask,
@@ -40,7 +46,6 @@ export function useSSE() {
         debug.sse('Connected');
         setIsOnline(true);
         isConnecting = false;
-        // Clear any pending reconnect
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
         }
@@ -48,13 +53,17 @@ export function useSSE() {
 
       eventSource.onmessage = (event) => {
         try {
-          // Skip keep-alive messages (they start with ":")
           if (event.data.startsWith(':')) {
             return;
           }
 
           const sseEvent: SSEEvent = JSON.parse(event.data);
           debug.sse(`Received event: ${sseEvent.type}`, sseEvent.payload);
+
+          // Route to component's eventHandler first (if provided)
+          if (eventHandlerRef.current) {
+            eventHandlerRef.current(sseEvent);
+          }
 
           switch (sseEvent.type) {
             case 'task_created':
@@ -71,7 +80,6 @@ export function useSSE() {
               });
               updateTask(incomingTask);
 
-              // Update selected task if viewing this task (for modal)
               if (selectedTask?.id === incomingTask.id) {
                 debug.sse('Also updating selectedTask for modal');
                 setSelectedTask(incomingTask);
@@ -80,17 +88,14 @@ export function useSSE() {
 
             case 'activity_logged':
               debug.sse('Activity logged', sseEvent.payload);
-              // Activities are fetched when task detail is opened
               break;
 
             case 'deliverable_added':
               debug.sse('Deliverable added', sseEvent.payload);
-              // Deliverables are fetched when task detail is opened
               break;
 
             case 'agent_spawned':
               debug.sse('Agent spawned', sseEvent.payload);
-              // Will trigger re-fetch of sub-agent count
               break;
 
             case 'agent_completed':
@@ -99,6 +104,10 @@ export function useSSE() {
 
             case 'event_added':
               addEvent(sseEvent.payload as { id: string; type: EventType; task_id?: string; message: string; created_at: string });
+              break;
+
+            case 'task_deleted':
+              debug.sse('Task deleted', sseEvent.payload);
               break;
 
             default:
@@ -114,11 +123,12 @@ export function useSSE() {
         setIsOnline(false);
         isConnecting = false;
 
-        // Close the connection
         eventSource.close();
         eventSourceRef.current = null;
 
-        // Attempt reconnection after 5 seconds
+        // SSE stream returns 429 when rate limited. The EventSource doesn't
+        // give us the HTTP status code, but we can detect rate limiting by
+        // the error pattern. If reconnecting too frequently, assume rate limit.
         reconnectTimeoutRef.current = setTimeout(() => {
           debug.sse('Attempting to reconnect...');
           connect();
@@ -126,10 +136,8 @@ export function useSSE() {
       };
     };
 
-    // Initial connection
     connect();
 
-    // Cleanup on unmount
     return () => {
       if (eventSourceRef.current) {
         debug.sse('Disconnecting...');

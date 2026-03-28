@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClient, updateClient, deleteClient, getClientStats } from '@/lib/db/clients';
-import type { UpdateClientRequest, ClientWithStats } from '@/lib/types';
+import { parseRequest, updateClientSchema } from '@/lib/validation';
+import type { ClientWithStats } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-// GET /api/clients/[id] - Get a single client
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {
@@ -20,40 +22,38 @@ export async function GET(
     }
 
     const stats = getClientStats(id);
-    const clientWithStats: ClientWithStats = { ...client, ...stats };
-
-    return NextResponse.json(clientWithStats);
+    return NextResponse.json({ ...client, ...stats } satisfies ClientWithStats);
   } catch (error) {
-    console.error('Failed to fetch client:', error);
-    return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 });
+    logger.error({ event: 'client_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch client') }, { status: 500 });
   }
 }
 
-// PUT /api/clients/[id] - Update a client
 export async function PUT(
   request: NextRequest,
   context: RouteContext
 ) {
   try {
     const { id } = await context.params;
-    const body: UpdateClientRequest = await request.json();
+    const body = await parseRequest(request, updateClientSchema);
 
     const client = updateClient(id, body);
-
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
     return NextResponse.json(client);
   } catch (error) {
-    console.error('Failed to update client:', error);
-    return NextResponse.json({ error: 'Failed to update client' }, { status: 500 });
+    if (error instanceof Error && error.name === 'ValidationError') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    logger.error({ event: 'client_update_failed' }, error);
+    return NextResponse.json({ error: api.internalError('update client') }, { status: 500 });
   }
 }
 
-// DELETE /api/clients/[id] - Delete a client
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {
@@ -66,7 +66,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete client:', error);
-    return NextResponse.json({ error: 'Failed to delete client' }, { status: 500 });
+    logger.error({ event: 'client_delete_failed' }, error);
+    return NextResponse.json({ error: api.internalError('delete client') }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync, existsSync, statSync } from 'fs';
 import path from 'path';
+import { logger } from '@/lib/logger';
 
 // Base directory for all project files - must match upload endpoint
 // Set via PROJECTS_PATH env var (e.g., ~/projects or /var/www/projects)
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
     // Read file
     const content = readFileSync(targetPath, isText ? 'utf-8' : undefined);
 
-    console.log(`[FILE DOWNLOAD] Read: ${targetPath} (${stats.size} bytes)`);
+    logger.info({ event: 'file_downloaded', path: targetPath, size: stats.size });
 
     // Return raw content or JSON wrapper
     if (raw) {
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
       modifiedAt: stats.mtime.toISOString(),
     });
   } catch (error) {
-    console.error('Error downloading file:', error);
+    logger.error({ event: 'file_download_failed' }, error);
     return NextResponse.json(
       { error: 'Failed to download file', details: String(error) },
       { status: 500 }

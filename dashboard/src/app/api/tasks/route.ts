@@ -1,207 +1,127 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { queryAll, queryOne, run } from '@/lib/db';
+import { run, queryOne } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { dispatchTask } from '@/lib/dispatch';
-import type { Task, CreateTaskRequest, Agent } from '@/lib/types';
+import { listTasks, getTaskById } from '@/lib/db/queries';
+import { parseRequest, createTaskSchema } from '@/lib/validation';
+import { NotFoundError, InternalError } from '@/lib/errors';
+import type { Agent } from '@/lib/types';
+import { api } from '@/lib/messages';
+import { logger } from '@/lib/logger';
 
-// GET /api/tasks - List all tasks with optional filters
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    const businessId = searchParams.get('business_id');
-    const workspaceId = searchParams.get('workspace_id');
-    const assignedAgentId = searchParams.get('assigned_agent_id');
 
-    let sql = `
-      SELECT
-        t.*,
-        aa.name as assigned_agent_name,
-        aa.avatar_emoji as assigned_agent_emoji,
-        ca.name as created_by_agent_name,
-        cl.name as client_name
-      FROM tasks t
-      LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
-      LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
-      LEFT JOIN clients cl ON t.client_id = cl.id
-      WHERE (t.source = 'mc' OR t.source IS NULL)
-    `;
-    const params: unknown[] = [];
+    const tasks = listTasks({
+      status: searchParams.get('status') ?? undefined,
+      businessId: searchParams.get('business_id') ?? undefined,
+      workspaceId: searchParams.get('workspace_id') ?? undefined,
+      assignedAgentId: searchParams.get('assigned_agent_id') ?? undefined,
+      limit: parseInt(searchParams.get('limit') ?? '200', 10) || 200,
+      offset: parseInt(searchParams.get('offset') ?? '0', 10) || 0,
+    });
 
-    if (status) {
-      // Support comma-separated status values (e.g., status=inbox,testing,in_progress)
-      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
-      if (statuses.length === 1) {
-        sql += ' AND t.status = ?';
-        params.push(statuses[0]);
-      } else if (statuses.length > 1) {
-        sql += ` AND t.status IN (${statuses.map(() => '?').join(',')})`;
-        params.push(...statuses);
-      }
-    }
-    if (businessId) {
-      sql += ' AND t.business_id = ?';
-      params.push(businessId);
-    }
-    if (workspaceId) {
-      sql += ' AND t.workspace_id = ?';
-      params.push(workspaceId);
-    }
-    if (assignedAgentId) {
-      sql += ' AND t.assigned_agent_id = ?';
-      params.push(assignedAgentId);
-    }
-
-    sql += ' ORDER BY t.created_at DESC';
-
-    const tasks = queryAll<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string; created_by_agent_name?: string; client_name?: string }>(sql, params);
-
-    // Transform to include nested agent info and client_name
-    const transformedTasks = tasks.map((task) => ({
-      ...task,
-      assigned_agent: task.assigned_agent_id
-        ? {
-            id: task.assigned_agent_id,
-            name: task.assigned_agent_name,
-            avatar_emoji: task.assigned_agent_emoji,
-          }
-        : undefined,
-      client_name: (task as { client_name?: string }).client_name,
-    }));
-
-    return NextResponse.json(transformedTasks);
+    return NextResponse.json({ items: tasks, count: tasks.length });
   } catch (error) {
-    console.error('Failed to fetch tasks:', error);
-    return NextResponse.json({ error: 'Failed to fetch tasks' }, { status: 500 });
+    logger.error({ event: 'tasks_fetch_failed' }, error);
+    return NextResponse.json({ error: api.internalError('fetch tasks') }, { status: 500 });
   }
 }
 
-// POST /api/tasks - Create a new task
 export async function POST(request: NextRequest) {
   try {
-    const body: CreateTaskRequest = await request.json();
-    console.log('[POST /api/tasks] Received body:', JSON.stringify(body));
-
-    if (!body.title) {
-      console.log('[POST /api/tasks] Title missing or empty');
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
-    }
-
+    const body = await parseRequest(request, createTaskSchema);
     const id = uuidv4();
     const now = new Date().toISOString();
 
-    const workspaceId = (body as { workspace_id?: string }).workspace_id || 'default';
-    const status = (body as { status?: string }).status || 'not_started';
-
     // Default to Lex COO if no assignee
-    let assignedAgentId = body.assigned_agent_id || null;
+    let assignedAgentId: string | null = body.assigned_agent_id ?? null;
     if (!assignedAgentId) {
-      const bull = queryOne<Agent>('SELECT id FROM agents WHERE name = ?', ['Lex COO']);
-      if (bull) assignedAgentId = bull.id;
+      const lexCoo = queryOne<Agent>('SELECT id FROM agents WHERE name = ?', ['Lex COO']);
+      if (lexCoo) assignedAgentId = lexCoo.id;
     }
 
     run(
-      `INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, workspace_id, business_id, due_date, client_id, project_id, source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mc', ?, ?)`,
+      `INSERT INTO tasks
+         (id, title, description, status, priority, assigned_agent_id, created_by_agent_id,
+          workspace_id, business_id, due_date, client_id, project_id,
+          planning_complete, planning_messages, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '[]', 'mc', ?, ?)`,
       [
         id,
         body.title,
-        body.description || null,
-        status,
-        body.priority || 'normal',
+        body.description ?? null,
+        body.status ?? 'not_started',
+        body.priority ?? 'normal',
         assignedAgentId,
-        body.created_by_agent_id || null,
-        workspaceId,
-        body.business_id || 'default',
-        body.due_date || null,
-        body.client_id || null,
-        body.project_id || null,
+        body.created_by_agent_id ?? null,
+        body.business_id ?? 'default',
+        body.due_date ?? null,
+        body.client_id ?? null,
+        body.project_id ?? null,
         now,
         now,
       ]
     );
 
     // Log event
-    let eventMessage = `New task: ${body.title}`;
-    if (body.created_by_agent_id) {
-      const creator = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [body.created_by_agent_id]);
-      if (creator) {
-        eventMessage = `${creator.name} created task: ${body.title}`;
-      }
-    }
+    const creator = body.created_by_agent_id
+      ? queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [body.created_by_agent_id])
+      : null;
+    const eventMessage = creator
+      ? `${creator.name} created task: ${body.title}`
+      : `New task: ${body.title}`;
 
     run(
       `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [uuidv4(), 'task_created', body.created_by_agent_id || null, id, eventMessage, now]
+      [uuidv4(), 'task_created', body.created_by_agent_id ?? null, id, eventMessage, now]
     );
 
-    // Fetch created task with all joined fields
-    let task = queryOne<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }>(
-      `SELECT t.*,
-        aa.name as assigned_agent_name,
-        aa.avatar_emoji as assigned_agent_emoji,
-        ca.name as created_by_agent_name,
-        ca.avatar_emoji as created_by_agent_emoji
-       FROM tasks t
-       LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
-       LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
-       WHERE t.id = ?`,
-      [id]
-    );
-    
+    // Fetch created task
+    let task = getTaskById(id);
+
     // Broadcast task creation via SSE
     if (task) {
-      broadcast({
-        type: 'task_created',
-        payload: task,
-      });
+      broadcast({ type: 'task_created', payload: task });
     }
 
-    // Auto-dispatch when assigned – await so we can report errors
+    // Auto-dispatch when assigned
     let dispatchResult: { success: boolean; error?: string } | null = null;
     if (assignedAgentId) {
       dispatchResult = await dispatchTask(id);
       if (!dispatchResult.success) {
-        console.error('[POST /api/tasks] Auto-dispatch failed:', dispatchResult.error);
-        const eventId = uuidv4();
+        logger.error({ event: 'task_auto_dispatch_failed', taskId: id, error: dispatchResult.error });
         run(
           `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [eventId, 'dispatch_failed', null, id, `Dispatch failed: ${dispatchResult.error}`, now]
+          [uuidv4(), 'dispatch_failed', null, id, `Dispatch failed: ${dispatchResult.error}`, now]
         );
         broadcast({
           type: 'event_added',
-          payload: { id: eventId, type: 'dispatch_failed', task_id: id, message: `Dispatch failed: ${dispatchResult.error}`, created_at: now },
+          payload: {
+            id: uuidv4(), type: 'dispatch_failed', task_id: id,
+            message: `Dispatch failed: ${dispatchResult.error}`, created_at: now,
+          },
         });
       } else {
-        // Re-fetch task (status changed to in_progress) for response
-        const updated = queryOne<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string; created_by_agent_name?: string; created_by_agent_emoji?: string }>(
-          `SELECT t.*, aa.name as assigned_agent_name, aa.avatar_emoji as assigned_agent_emoji,
-            ca.name as created_by_agent_name, ca.avatar_emoji as created_by_agent_emoji
-           FROM tasks t
-           LEFT JOIN agents aa ON t.assigned_agent_id = aa.id
-           LEFT JOIN agents ca ON t.created_by_agent_id = ca.id
-           WHERE t.id = ?`,
-          [id]
-        );
-        if (updated) task = updated;
+        // Re-fetch after status change to in_progress
+        task = getTaskById(id) ?? task;
       }
     }
 
-    const responseTask = {
-      ...task,
-      assigned_agent: task?.assigned_agent_id
-        ? { id: task.assigned_agent_id, name: task.assigned_agent_name, avatar_emoji: task.assigned_agent_emoji }
-        : undefined,
-    };
     return NextResponse.json(
-      { ...responseTask, dispatch_ok: dispatchResult?.success ?? null, dispatch_error: dispatchResult?.error },
+      {
+        ...task,
+        dispatch_ok: dispatchResult?.success ?? null,
+        dispatch_error: dispatchResult?.error,
+      },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Failed to create task:', error);
-    return NextResponse.json({ error: 'Failed to create task' }, { status: 500 });
+    logger.error({ event: 'task_create_failed' }, error);
+    return NextResponse.json({ error: api.internalError('create task') }, { status: 500 });
   }
 }
