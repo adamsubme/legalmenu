@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'lex-legal-session-secret-2026-v3';
+const AGENT_API_KEY = process.env.AGENT_API_KEY || 'openclaw-agent-key-2026';
 
 export interface SessionUser {
   userId: string;
@@ -9,6 +10,12 @@ export interface SessionUser {
 }
 
 export async function verifySession(request: NextRequest): Promise<SessionUser | null> {
+  // Check for agent API key
+  const apiKey = request.headers.get('x-agent-key');
+  if (apiKey === AGENT_API_KEY) {
+    return { userId: 'agent', role: 'agent', exp: Date.now() + 86400000 };
+  }
+
   const session = request.cookies.get('lex-session')?.value;
   if (!session) return null;
 
