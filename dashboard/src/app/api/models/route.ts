@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
+import { verifySession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +8,12 @@ const CONFIG_PATH = '/root/.openclaw/openclaw.json';
 
 export async function GET() {
   try {
+    // Auth check
+    const session = await verifySession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
     const models: { id: string; name: string; provider: string; reasoning?: boolean }[] = [];
 
