@@ -7,10 +7,22 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AGENT_MAP } from '@/lib/utils';
-import { ArrowLeft, Save, Plus, Trash2, BookOpen, Wrench, Brain, Settings, FileText, RefreshCw } from 'lucide-react';
-import type { AgentFileInfo, AgentLesson, ModelConfig } from '@/lib/types-v3';
+import { ArrowLeft, Save, Plus, Trash2, BookOpen, Wrench, Brain, Settings, FileText, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import type { AgentFileInfo, AgentLesson } from '@/lib/types-v3';
 
 type AgentTab = 'identity' | 'config' | 'skills' | 'knowledge' | 'lessons';
+
+interface Model {
+  id: string;
+  name: string;
+  provider: string;
+  reasoning?: boolean;
+}
+
+interface AgentModelConfig {
+  primary: string;
+  fallbacks: string[];
+}
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -19,13 +31,17 @@ export default function AgentDetailPage() {
 
   const info = AGENT_MAP[agentId] || { name: agentId, emoji: '🤖', role: 'Agent', primaryModel: '—', tier: '—' };
 
-  const [tab, setTab] = useState<AgentTab>('identity');
+  const [tab, setTab] = useState<AgentTab>('config');
   const [files, setFiles] = useState<AgentFileInfo[]>([]);
   const [lessons, setLessons] = useState<AgentLesson[]>([]);
-  const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelConfig, setModelConfig] = useState<AgentModelConfig>({ primary: '', fallbacks: [] });
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [newLesson, setNewLesson] = useState('');
   const [newCategory, setNewCategory] = useState('general');
   const [knowledgeUrl, setKnowledgeUrl] = useState('');
@@ -34,17 +50,23 @@ export default function AgentDetailPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [fRes, lRes, mRes] = await Promise.all([
+      const [fRes, lRes, mRes, modelsRes] = await Promise.all([
         fetch(`/api/agents/${agentId}/files`),
         fetch(`/api/agents/${agentId}/lessons`),
         fetch(`/api/agents/${agentId}/model`),
+        fetch('/api/models'),
       ]);
       if (fRes.ok) setFiles(await fRes.json());
       if (lRes.ok) setLessons(await lRes.json());
       if (mRes.ok) {
         const d = await mRes.json();
-        setModelConfig(d.model || null);
+        if (d.model && typeof d.model === 'object') {
+          setModelConfig(d.model as AgentModelConfig);
+        } else if (d.model && typeof d.model === 'string') {
+          setModelConfig({ primary: d.model as string, fallbacks: [] });
+        }
       }
+      if (modelsRes.ok) setModels(await modelsRes.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [agentId]);
@@ -63,15 +85,63 @@ export default function AgentDetailPage() {
     finally { setSaving(false); }
   };
 
-  const saveModel = async () => {
-    if (!modelConfig) return;
+  const saveModel = async (restart: boolean = false) => {
     setSaving(true);
+    setSaveError('');
+    setSaveSuccess(false);
+    
+    // Validate
+    if (!modelConfig.primary.trim()) {
+      setSaveError('Primary model is required');
+      setSaving(false);
+      return;
+    }
+    
+    const selectedModel = models.find(m => m.id === modelConfig.primary);
+    if (!selectedModel) {
+      setSaveError('Selected model is not available. Choose from the dropdown or enter a valid model ID.');
+      setSaving(false);
+      return;
+    }
+    
     try {
-      await fetch(`/api/agents/${agentId}/model`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelConfig }),
+      const res = await fetch(`/api/agents/${agentId}/model`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          model: modelConfig,
+          restartGateway: restart,
+        }),
       });
-    } catch (e) { console.error(e); }
+      
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to save');
+      }
+      
+      setSaveSuccess(true);
+      
+      if (restart) {
+        setRestarting(true);
+        // Poll for restart completion
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const checkRes = await fetch(`/api/agents/${agentId}/model`);
+            if (checkRes.ok) {
+              clearInterval(poll);
+              setRestarting(false);
+            }
+          } catch {}
+          if (attempts > 30) clearInterval(poll); // 30 second timeout
+        }, 1000);
+      }
+      
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to save model config');
+    }
     finally { setSaving(false); }
   };
 
@@ -116,7 +186,7 @@ export default function AgentDetailPage() {
         <span className="text-2xl">{info.emoji}</span>
         <div>
           <h1 className="text-lg font-semibold">{info.name}</h1>
-          <p className="text-xs text-zinc-500">{info.role} · {info.primaryModel}</p>
+          <p className="text-xs text-zinc-500">{info.role}</p>
         </div>
         <div className="ml-auto">
           <Badge variant="outline">{info.tier}</Badge>
@@ -175,27 +245,102 @@ export default function AgentDetailPage() {
         {tab === 'config' && (
           <div className="space-y-6 max-w-2xl">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Model Configuration</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Model Configuration
+                </CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
+                {saveSuccess && (
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Configuration saved successfully!
+                  </div>
+                )}
+                
+                {saveError && (
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    {saveError}
+                  </div>
+                )}
+                
+                {restarting && (
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Restarting OpenClaw gateway...
+                  </div>
+                )}
+                
                 <div>
                   <label className="text-xs text-zinc-500 mb-1 block">Primary Model</label>
-                  <Input
-                    value={modelConfig?.primary || ''}
-                    onChange={e => setModelConfig(prev => prev ? { ...prev, primary: e.target.value } : { primary: e.target.value, fallbacks: [] })}
-                    className="font-mono text-xs"
-                    placeholder="e.g. google/gemini-3-pro-preview"
-                  />
+                  <select
+                    value={modelConfig.primary}
+                    onChange={e => setModelConfig(prev => ({ ...prev, primary: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">Select a model...</option>
+                    {models.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.provider}){m.reasoning ? ' • reasoning' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Current: <span className="text-blue-400">{modelConfig.primary || 'Not set'}</span>
+                  </p>
                 </div>
+                
                 <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">Fallback Models (one per line)</label>
-                  <textarea
-                    value={modelConfig?.fallbacks?.join('\n') || ''}
-                    onChange={e => setModelConfig(prev => prev ? { ...prev, fallbacks: e.target.value.split('\n').filter(Boolean) } : { primary: '', fallbacks: e.target.value.split('\n').filter(Boolean) })}
-                    className="w-full min-h-[100px] rounded-md border border-zinc-700 bg-zinc-950 p-3 font-mono text-xs text-zinc-200 focus:border-blue-500 focus:outline-none"
-                    placeholder={"google/gemini-3-pro-preview\nzai/glm-5\nminimax/MiniMax-M2.5"}
-                  />
+                  <label className="text-xs text-zinc-500 mb-1 block">Fallback Models</label>
+                  <div className="space-y-2">
+                    {modelConfig.fallbacks.map((fb, i) => (
+                      <div key={i} className="flex gap-2">
+                        <select
+                          value={fb}
+                          onChange={e => {
+                            const newFallbacks = [...modelConfig.fallbacks];
+                            newFallbacks[i] = e.target.value;
+                            setModelConfig(prev => ({ ...prev, fallbacks: newFallbacks }));
+                          }}
+                          className="flex-1 h-9 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-200"
+                        >
+                          <option value="">Select fallback...</option>
+                          {models.filter(m => m.id !== modelConfig.primary).map(m => (
+                            <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
+                          ))}
+                        </select>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setModelConfig(prev => ({ 
+                            ...prev, 
+                            fallbacks: prev.fallbacks.filter((_, idx) => idx !== i) 
+                          }))}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setModelConfig(prev => ({ ...prev, fallbacks: [...prev.fallbacks, ''] }))}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />Add Fallback
+                    </Button>
+                  </div>
                 </div>
-                <Button onClick={saveModel} disabled={saving}><Save className="h-3.5 w-3.5 mr-1" />Save Model Config</Button>
+                
+                <div className="flex gap-2 pt-2">
+                  <Button onClick={() => saveModel(false)} disabled={saving || restarting}>
+                    <Save className="h-3.5 w-3.5 mr-1" />Save
+                  </Button>
+                  <Button variant="outline" onClick={() => saveModel(true)} disabled={saving || restarting}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />Save & Restart Gateway
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>

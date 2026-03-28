@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import { exec } from 'child_process';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +55,8 @@ export async function PATCH(
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
 
     if (body.restartGateway) {
-      exec('systemctl restart openclaw-legal', (error) => {
+      // Use pm2 to restart openclaw gateway
+      exec('pm2 restart openclaw || true', (error) => {
         if (error) console.error('[Model] Failed to restart gateway:', error.message);
         else console.log('[Model] Gateway restarted after config change');
       });
