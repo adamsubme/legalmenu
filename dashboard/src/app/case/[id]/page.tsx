@@ -84,7 +84,7 @@ export default function CaseDetailPage() {
             fetch(`/api/knowledge?scope=client&scope_id=${taskData.client_id}`, { credentials: 'include' }),
             taskData.project_id 
               ? fetch(`/api/knowledge?scope=project&scope_id=${taskData.project_id}`, { credentials: 'include' })
-              : Promise.resolve({ ok: false }),
+              : Promise.resolve(new Response('', { status: 404 })),
           ]);
           if (clientKbRes.ok) setClientKnowledge(await clientKbRes.json());
           if (clientProjKbRes.ok) setProjectKnowledge(await clientProjKbRes.json());
