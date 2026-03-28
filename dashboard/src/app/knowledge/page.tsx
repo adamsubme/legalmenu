@@ -171,17 +171,17 @@ export default function KnowledgePage() {
               <Card key={entry.id} className="hover:border-zinc-600 transition-colors">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    {entry.source_type === 'link' ? <Link2 className="h-5 w-5 text-blue-400 shrink-0" /> : <FileText className="h-5 w-5 text-zinc-400 shrink-0" />}
+                    {(entry as { entry_type?: string }).entry_type === 'link' ? <Link2 className="h-5 w-5 text-blue-400 shrink-0" /> : <FileText className="h-5 w-5 text-zinc-400 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{entry.title}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <Badge variant={entry.status === 'indexed' ? 'success' : entry.status === 'failed' ? 'destructive' : 'warning'} className="text-[10px]">{entry.status}</Badge>
-                        <Badge variant="outline" className="text-[10px]">{entry.source_type}</Badge>
+                        <Badge variant={(entry as { status?: string }).status === 'indexed' ? 'success' : (entry as { status?: string }).status === 'failed' ? 'destructive' : 'warning'} className="text-[10px]">{(entry as { status?: string }).status}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{(entry as { entry_type?: string }).entry_type}</Badge>
                         {entry.tags && entry.tags.split(',').map(t => <Badge key={t} variant="outline" className="text-[10px]">{t.trim()}</Badge>)}
-                        {entry.file_size && <span className="text-xs text-zinc-600">{(entry.file_size / 1024).toFixed(0)}KB</span>}
+                        {(entry as { file_size?: number }).file_size && <span className="text-xs text-zinc-600">{((entry as { file_size?: number }).file_size! / 1024).toFixed(0)}KB</span>}
                         <span className="text-xs text-zinc-600">{timeAgo(entry.created_at)}</span>
                       </div>
-                      {entry.description && <p className="text-xs text-zinc-500 mt-1 line-clamp-1">{entry.description}</p>}
+                      {(entry as { description?: string }).description && <p className="text-xs text-zinc-500 mt-1 line-clamp-1">{(entry as { description?: string }).description}</p>}
                     </div>
                     <Button variant="ghost" size="icon" className="text-zinc-500 hover:text-red-400" onClick={() => deleteEntry(entry.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
