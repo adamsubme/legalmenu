@@ -17,6 +17,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Debug secrets
+        run: |
+          echo "SERVER_HOST: ${{ secrets.SERVER_HOST }}"
+          echo "SERVER_USER: ${{ secrets.SERVER_USER }}"
+          echo "SERVER_SSH_KEY set: ${{ secrets.SERVER_SSH_KEY != '' }}"
+
       - name: Check if secrets are configured
         id: check-secrets
         run: |
@@ -82,25 +88,17 @@ jobs:
         run: npx tsc --noEmit
         working-directory: dashboard
 
+      - name: Run tests
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
+        run: npm test
+        working-directory: dashboard
+
       - name: Build application
         if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: npm run build
         working-directory: dashboard
         env:
           NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Create deployment package
-        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
-        run: |
-          tar -czf deployment.tar.gz \
-            --exclude='.next/BUILD_ID' \
-            --exclude='.next/cache' \
-            .next \
-            package.json \
-            package-lock.json \
-            next.config.mjs \
-            ecosystem.config.js.example
-        working-directory: dashboard
 
       - name: Deploy via SSH
         if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
@@ -111,11 +109,30 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs:
             - NODE_ENV
+          command_timeout: 600
           script: |
+            set -e
+
+            echo "=== Connected to server ==="
+            whoami
+            pwd
+
             cd /root/mission-control/dashboard
-            npm ci --legacy-peer-deps
-            npm run build
+
+            echo "=== Installing dependencies ==="
+            npm ci --legacy-peer-deps || { echo "npm ci failed"; exit 1; }
+
+            echo "=== Building ==="
+            npm run build || { echo "Build failed"; exit 1; }
+
+            echo "=== Restarting PM2 ==="
             pm2 restart mission-control || pm2 start ecosystem.config.js
             pm2 save
+
+            echo "=== Health check ==="
+            sleep 5
+            curl -sf http://localhost:3000/api/health || { echo "Health check failed"; exit 1; }
+
+            echo "✅ Deploy successful"
         env:
           NODE_ENV: production
