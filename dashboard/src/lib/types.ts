@@ -56,6 +56,7 @@ export interface Task {
   planning_complete?: boolean;
   client_id?: string;
   project_id?: string;
+  sub_status?: string;
   created_at: string;
   updated_at: string;
   // Joined fields
