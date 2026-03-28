@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings, Save, RotateCcw, FolderOpen, Link as LinkIcon, Users, Shield, UserPlus, Trash2, Edit2 } from 'lucide-react';
 import { getConfig, updateConfig, resetConfig, type MissionControlConfig } from '@/lib/config';
+import { api } from '@/lib/api-client';
 
 type UserRole = 'admin' | 'mod' | 'company' | 'client';
 
@@ -41,22 +42,16 @@ export default function SettingsPage() {
 
   async function loadCurrentUser() {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentUser(data.user);
-      }
+      const data = await api.get<{ user: { role: string } }>('/auth/me');
+      setCurrentUser(data.user);
     } catch { /* ignore */ }
   }
 
   async function loadUsers() {
     setUsersLoading(true);
     try {
-      const res = await fetch('/api/users', { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users || []);
-      }
+      const data = await api.get<{ users?: User[] }>('/users');
+      setUsers(data.users || []);
     } catch { /* ignore */ }
     setUsersLoading(false);
   }
@@ -95,27 +90,19 @@ export default function SettingsPage() {
     e.preventDefault();
     setUserError('');
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        setShowCreateUser(false);
-        setNewUser({ name: '', email: '', password: '', role: 'client' });
-        loadUsers();
-      } else {
-        const data = await res.json();
-        setUserError(data.error || 'Failed to create user');
-      }
-    } catch { setUserError('Failed to create user'); }
+      await api.post('/users', newUser);
+      setShowCreateUser(false);
+      setNewUser({ name: '', email: '', password: '', role: 'client' });
+      loadUsers();
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : 'Failed to create user');
+    }
   }
 
   async function handleDeleteUser(user: User) {
     if (!confirm(`Deactivate user "${user.name}"?`)) return;
     try {
-      await fetch(`/api/users/${user.id}`, { method: 'DELETE', credentials: 'include' });
+      await api.delete(`/users/${user.id}`);
       loadUsers();
     } catch { /* ignore */ }
   }
@@ -125,20 +112,12 @@ export default function SettingsPage() {
     if (!editingUser) return;
     setUserError('');
     try {
-      const res = await fetch(`/api/users/${editingUser.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editingUser.name, role: editingUser.role }),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        setEditingUser(null);
-        loadUsers();
-      } else {
-        const data = await res.json();
-        setUserError(data.error || 'Failed to update user');
-      }
-    } catch { setUserError('Failed to update user'); }
+      await api.patch(`/users/${editingUser.id}`, { name: editingUser.name, role: editingUser.role });
+      setEditingUser(null);
+      loadUsers();
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : 'Failed to update user');
+    }
   }
 
   const isAdmin = currentUser?.role === 'admin';

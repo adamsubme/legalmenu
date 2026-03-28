@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Scale, Lock, AlertCircle } from 'lucide-react';
+import { api } from '@/lib/api-client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,8 +14,8 @@ export default function LoginPage() {
 
   // If already authenticated, redirect to dashboard immediately
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => { if (res.ok) router.push('/'); })
+    api.get('/auth/me')
+      .then(() => router.push('/'))
       .catch(() => {});
   }, [router]);
 
@@ -30,7 +31,6 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        // Small delay so cookie is set before navigation
         setTimeout(() => {
           router.push("/");
           router.refresh();

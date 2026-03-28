@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Task, TaskActivity, TaskAttachment, KnowledgeEntry } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 type Tab = 'chat' | 'knowledge' | 'legal' | 'project' | 'client' | 'files' | 'timeline';
 
@@ -67,37 +68,33 @@ export default function CaseDetailPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [tRes, actRes, attRes, kbRes] = await Promise.all([
-        fetch(`/api/tasks/${id}`, { credentials: 'include' }),
-        fetch(`/api/tasks/${id}/activities`, { credentials: 'include' }),
-        fetch(`/api/tasks/${id}/attachments`, { credentials: 'include' }),
-        fetch(`/api/knowledge?scope=task&scope_id=${id}`, { credentials: 'include' }),
+      const [taskData, activities, attachments, knowledge] = await Promise.all([
+        api.get<TaskExt>(`/tasks/${id}`),
+        api.get<TaskActivity[]>(`/tasks/${id}/activities`),
+        api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
+        api.get<KnowledgeEntry[]>(`/knowledge?scope=task&scope_id=${id}`),
       ]);
-      
-      if (tRes.ok) {
-        const taskData = await tRes.json();
-        setTask(taskData);
-        
-        // Load client and project knowledge
-        if (taskData.client_id) {
-          const [clientKbRes, clientProjKbRes] = await Promise.all([
-            fetch(`/api/knowledge?scope=client&scope_id=${taskData.client_id}`, { credentials: 'include' }),
-            taskData.project_id 
-              ? fetch(`/api/knowledge?scope=project&scope_id=${taskData.project_id}`, { credentials: 'include' })
-              : Promise.resolve(new Response('', { status: 404 })),
-          ]);
-          if (clientKbRes.ok) setClientKnowledge(await clientKbRes.json());
-          if (clientProjKbRes.ok) setProjectKnowledge(await clientProjKbRes.json());
-        }
-        
-        // Load global knowledge
-        const globalKbRes = await fetch('/api/knowledge?scope=global', { credentials: 'include' });
-        if (globalKbRes.ok) setGlobalKnowledge(await globalKbRes.json());
+
+      setTask(taskData);
+      setActivities(activities);
+      setAttachments(Array.isArray(attachments) ? attachments : []);
+      setKnowledge(Array.isArray(knowledge) ? knowledge : []);
+
+      // Load client and project knowledge
+      if (taskData.client_id) {
+        const [clientKb, projectKb] = await Promise.all([
+          api.get<KnowledgeEntry[]>(`/knowledge?scope=client&scope_id=${taskData.client_id}`),
+          taskData.project_id
+            ? api.get<KnowledgeEntry[]>(`/knowledge?scope=project&scope_id=${taskData.project_id}`)
+            : Promise.resolve([]),
+        ]);
+        setClientKnowledge(clientKb);
+        setProjectKnowledge(projectKb);
       }
-      
-      if (actRes.ok) setActivities(await actRes.json());
-      if (attRes.ok) { const d = await attRes.json(); setAttachments(Array.isArray(d) ? d : []); }
-      if (kbRes.ok) { const d = await kbRes.json(); setKnowledge(Array.isArray(d) ? d : []); }
+
+      // Load global knowledge
+      const globalKb = await api.get<KnowledgeEntry[]>('/knowledge?scope=global');
+      setGlobalKnowledge(globalKb);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [id]);
@@ -106,11 +103,15 @@ export default function CaseDetailPage() {
 
   useEffect(() => {
     if (!task?.planning_session_key) return;
-    
+
     async function loadChat() {
       try {
-        const res = await fetch(`/api/openclaw/chat?sessionKey=${task!.planning_session_key}`, { credentials: 'include' });
-        if (res.ok) { const d = await res.json(); setChatMessages(Array.isArray(d) ? d : d.messages || []); }
+        const data = await api.get<unknown>(`/openclaw/chat?sessionKey=${task!.planning_session_key}`);
+        if (Array.isArray(data)) {
+          setChatMessages(data as { role: string; content: string; timestamp?: number }[]);
+        } else if (typeof data === 'object' && data !== null && 'messages' in data) {
+          setChatMessages((data as { messages: { role: string; content: string; timestamp?: number }[] }).messages);
+        }
       } catch {}
     }
     loadChat();
@@ -124,12 +125,7 @@ export default function CaseDetailPage() {
     if (!message.trim() || !task?.planning_session_key) return;
     setSending(true);
     try {
-      await fetch('/api/openclaw/chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionKey: task.planning_session_key, content: message, agentId: task.assigned_agent_id }),
-        credentials: 'include',
-      });
+      await api.post('/openclaw/chat/send', { sessionKey: task.planning_session_key, content: message, agentId: task.assigned_agent_id });
       setMessage('');
     } catch (e) { console.error(e); }
     finally { setSending(false); }
@@ -138,45 +134,32 @@ export default function CaseDetailPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     const fd = new FormData();
     fd.append('file', file);
     fd.append('taskId', id);
-    
+
     try {
-      const uploadRes = await fetch('/api/attachments/upload', { method: 'POST', body: fd, credentials: 'include' });
-      if (uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        await fetch(`/api/tasks/${id}/attachments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            attachment_type: 'file',
-            title: file.name,
-            file_path: uploadData.file_path,
-            file_name: uploadData.file_name,
-            file_size: uploadData.file_size,
-            file_mime: uploadData.file_mime,
-          }),
-          credentials: 'include',
-        });
-        loadData();
-      }
+      const uploadData = await api.upload<{ file_path: string; file_name: string; file_size: number; file_mime: string }>('/attachments/upload', fd);
+      await api.post(`/tasks/${id}/attachments`, {
+        attachment_type: 'file',
+        title: file.name,
+        file_path: uploadData.file_path,
+        file_name: uploadData.file_name,
+        file_size: uploadData.file_size,
+        file_mime: uploadData.file_mime,
+      });
+      loadData();
     } catch (e) { console.error(e); }
   };
 
   const handleAddLink = async () => {
     if (!newLinkUrl) return;
     try {
-      await fetch(`/api/tasks/${id}/attachments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          attachment_type: 'link',
-          title: newLinkTitle || newLinkUrl,
-          url: newLinkUrl,
-        }),
-        credentials: 'include',
+      await api.post(`/tasks/${id}/attachments`, {
+        attachment_type: 'link',
+        title: newLinkTitle || newLinkUrl,
+        url: newLinkUrl,
       });
       setNewLinkTitle('');
       setNewLinkUrl('');
@@ -188,17 +171,12 @@ export default function CaseDetailPage() {
   const handleAddKnowledge = async () => {
     if (!kbTitle || !kbContent) return;
     try {
-      await fetch('/api/knowledge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: kbTitle,
-          content: kbContent,
-          scope: 'task',
-          scope_id: id,
-          entry_type: kbType,
-        }),
-        credentials: 'include',
+      await api.post('/knowledge', {
+        title: kbTitle,
+        content: kbContent,
+        scope: 'task',
+        scope_id: id,
+        entry_type: kbType,
       });
       setKbTitle('');
       setKbContent('');
@@ -209,7 +187,7 @@ export default function CaseDetailPage() {
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     try {
-      await fetch(`/api/tasks/${id}/attachments/${attachmentId}`, { method: 'DELETE', credentials: 'include' });
+      await api.delete(`/tasks/${id}/attachments/${attachmentId}`);
       loadData();
     } catch (e) { console.error(e); }
   };

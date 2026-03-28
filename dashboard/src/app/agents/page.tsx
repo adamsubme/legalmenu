@@ -7,6 +7,7 @@ import { AGENT_MAP } from '@/lib/utils';
 import { Bot, Settings, BookOpen, Brain } from 'lucide-react';
 import Link from 'next/link';
 import type { Agent } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -15,8 +16,8 @@ export default function AgentsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/agents');
-        if (res.ok) setAgents(await res.json());
+        const data = await api.get<Agent[]>('/agents');
+        setAgents(data);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     }

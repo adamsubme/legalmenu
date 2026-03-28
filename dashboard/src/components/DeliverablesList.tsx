@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { FileText, Link as LinkIcon, Package, ExternalLink, Eye } from 'lucide-react';
 import { debug } from '@/lib/debug';
 import type { TaskDeliverable } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 interface DeliverablesListProps {
   taskId: string;
@@ -60,27 +61,9 @@ export function DeliverablesList({ taskId }: DeliverablesListProps) {
     if (deliverable.path) {
       try {
         debug.file('Opening file in Finder', { path: deliverable.path });
-        const res = await fetch('/api/files/reveal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filePath: deliverable.path }),
-        });
-
-        if (res.ok) {
-          debug.file('Opened in Finder successfully');
-          return;
-        }
-
-        const error = await res.json();
-        debug.file('Failed to open', error);
-
-        if (res.status === 404) {
-          alert(`File not found:\n${deliverable.path}\n\nThe file may have been moved or deleted.`);
-        } else if (res.status === 403) {
-          alert(`Cannot open this location:\n${deliverable.path}\n\nPath is outside allowed directories.`);
-        } else {
-          throw new Error(error.error || 'Unknown error');
-        }
+        await api.post('/files/reveal', { filePath: deliverable.path });
+        debug.file('Opened in Finder successfully');
+        return;
       } catch (error) {
         console.error('Failed to open file:', error);
         // Fallback: copy path to clipboard

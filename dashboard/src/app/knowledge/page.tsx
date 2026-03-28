@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { timeAgo } from '@/lib/utils';
 import { BookOpen, Search, Upload, Plus, Trash2, Link2, FileText, Database, RefreshCw } from 'lucide-react';
 import type { KnowledgeEntry } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 export default function KnowledgePage() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
@@ -26,8 +27,8 @@ export default function KnowledgePage() {
 
   async function loadEntries() {
     try {
-      const res = await fetch('/api/knowledge', { credentials: 'include' });
-      if (res.ok) setEntries(await res.json());
+      const data = await api.get<KnowledgeEntry[]>('/knowledge');
+      setEntries(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -36,15 +37,8 @@ export default function KnowledgePage() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const res = await fetch('/api/knowledge/search', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery, limit: 10 }),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(data.data || data.results || []);
-      }
+      const data = await api.post<{ data?: unknown[]; results?: unknown[] }>('/knowledge/search', { query: searchQuery, limit: 10 });
+      setSearchResults(data.data || data.results || []);
     } catch (e) { console.error(e); }
     finally { setSearching(false); }
   }
@@ -52,11 +46,7 @@ export default function KnowledgePage() {
   async function addEntry() {
     if (!newEntry.title.trim()) return;
     try {
-      await fetch('/api/knowledge', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newEntry),
-        credentials: 'include',
-      });
+      await api.post('/knowledge', newEntry);
       setNewEntry({ title: '', source_type: 'link', source_url: '', description: '', tags: '' });
       setShowAdd(false);
       loadEntries();
@@ -69,7 +59,7 @@ export default function KnowledgePage() {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('title', file.name);
-      await fetch('/api/knowledge/upload', { method: 'POST', body: fd, credentials: 'include' });
+      await api.upload('/knowledge/upload', fd);
       loadEntries();
     } catch (e) { console.error(e); }
     finally { setUploading(false); }
@@ -77,7 +67,7 @@ export default function KnowledgePage() {
 
   async function deleteEntry(id: string) {
     try {
-      await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE', credentials: 'include' });
+      await api.delete(`/knowledge?id=${id}`);
       loadEntries();
     } catch (e) { console.error(e); }
   }

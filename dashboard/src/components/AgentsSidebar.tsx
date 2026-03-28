@@ -5,6 +5,7 @@ import { Plus, ChevronRight, Zap, ZapOff, Loader2 } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Agent, AgentStatus, OpenClawSession } from '@/lib/types';
 import { AgentModal } from './AgentModal';
+import { api } from '@/lib/api-client';
 
 type FilterTab = 'all' | 'working' | 'standby';
 
@@ -25,12 +26,9 @@ export function AgentsSidebar({ workspaceId }: AgentsSidebarProps) {
     const loadOpenClawSessions = async () => {
       for (const agent of agents) {
         try {
-          const res = await fetch(`/api/agents/${agent.id}/openclaw`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.linked && data.session) {
-              setAgentOpenClawSession(agent.id, data.session as OpenClawSession);
-            }
+          const data = await api.get<{ linked?: boolean; session?: OpenClawSession }>(`/agents/${agent.id}/openclaw`);
+          if (data.linked && data.session) {
+            setAgentOpenClawSession(agent.id, data.session);
           }
         } catch (error) {
           console.error(`Failed to load OpenClaw session for ${agent.name}:`, error);
@@ -46,11 +44,8 @@ export function AgentsSidebar({ workspaceId }: AgentsSidebarProps) {
   useEffect(() => {
     const loadSubAgentCount = async () => {
       try {
-        const res = await fetch('/api/openclaw/sessions?session_type=subagent&status=active');
-        if (res.ok) {
-          const sessions = await res.json();
-          setActiveSubAgents(sessions.length);
-        }
+        const sessions = await api.get<{ length: number }[]>('/openclaw/sessions?session_type=subagent&status=active');
+        setActiveSubAgents(Array.isArray(sessions) ? sessions.length : 0);
       } catch (error) {
         console.error('Failed to load sub-agent count:', error);
       }
@@ -64,28 +59,19 @@ export function AgentsSidebar({ workspaceId }: AgentsSidebarProps) {
   }, []);
 
   const handleConnectToOpenClaw = async (agent: Agent, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent selecting the agent
+    e.stopPropagation();
     setConnectingAgentId(agent.id);
 
     try {
       const existingSession = agentOpenClawSessions[agent.id];
 
       if (existingSession) {
-        // Disconnect
-        const res = await fetch(`/api/agents/${agent.id}/openclaw`, { method: 'DELETE' });
-        if (res.ok) {
-          setAgentOpenClawSession(agent.id, null);
-        }
+        await api.delete(`/agents/${agent.id}/openclaw`);
+        setAgentOpenClawSession(agent.id, null);
       } else {
-        // Connect
-        const res = await fetch(`/api/agents/${agent.id}/openclaw`, { method: 'POST' });
-        if (res.ok) {
-          const data = await res.json();
-          setAgentOpenClawSession(agent.id, data.session as OpenClawSession);
-        } else {
-          const error = await res.json();
-          console.error('Failed to connect to OpenClaw:', error);
-          alert(`Failed to connect: ${error.error || 'Unknown error'}`);
+        const data = await api.post<{ session?: OpenClawSession }>(`/agents/${agent.id}/openclaw`);
+        if (data.session) {
+          setAgentOpenClawSession(agent.id, data.session);
         }
       }
     } catch (error) {

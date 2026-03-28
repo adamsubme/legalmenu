@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Users, Search, Plus, Phone, Mail, MessageCircle, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { Client, ClientWithStats } from '@/lib/types';
+import { api } from '@/lib/api-client';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientWithStats[]>([]);
@@ -22,9 +23,9 @@ export default function ClientsPage() {
 
   async function loadClients() {
     try {
-      const url = search ? `/api/clients?search=${encodeURIComponent(search)}` : '/api/clients';
-      const res = await fetch(url, { credentials: 'include' });
-      if (res.ok) setClients(await res.json());
+      const url = search ? `/clients?search=${encodeURIComponent(search)}` : '/clients';
+      const data = await api.get<ClientWithStats[]>(url);
+      setClients(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -32,17 +33,10 @@ export default function ClientsPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClient),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        setShowCreate(false);
-        setNewClient({ name: '', email: '', phone: '', telegram_username: '' });
-        loadClients();
-      }
+      await api.post('/clients', newClient);
+      setShowCreate(false);
+      setNewClient({ name: '', email: '', phone: '', telegram_username: '' });
+      loadClients();
     } catch (e) { console.error(e); }
   }
 
