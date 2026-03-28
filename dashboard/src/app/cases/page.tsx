@@ -138,6 +138,7 @@ function CasesContent() {
   const [newDesc, setNewDesc] = useState('');
   const [newPriority, setNewPriority] = useState('normal');
   const [newType, setNewType] = useState('');
+  const [newLink, setNewLink] = useState('');
   const [newClientId, setNewClientId] = useState('');
   const [newProjectId, setNewProjectId] = useState(preselectedProjectId);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
