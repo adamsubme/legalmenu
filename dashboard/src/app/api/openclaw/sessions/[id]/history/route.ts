@@ -22,7 +22,16 @@ export async function GET(request: Request, { params }: RouteParams) {
       }
     }
 
-    const history = await client.getSessionHistory(id);
+    // First get the session to find its key
+    const sessions = await client.listSessions();
+    const session = sessions.find((s: { sessionId: string; key?: string }) => s.sessionId === id);
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // Use getChatHistory with the session key
+    const history = await client.getChatHistory(session.key || id);
     return NextResponse.json(history);
   } catch (error) {
     console.error('Failed to get OpenClaw session history:', error);
@@ -38,7 +47,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { content } = body;
+    const { content, sessionKey } = body;
 
     if (!content) {
       return NextResponse.json({ error: 'content is required' }, { status: 400 });
@@ -57,8 +66,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Find session to get its key
+    const sessions = await client.listSessions();
+    const session = sessions.find((s: { sessionId: string; key?: string }) => s.sessionId === id);
+    const key = sessionKey || session?.key || id;
+
     // Use sendMessage to send to the session
-    await client.sendMessage(id, content);
+    await client.sendMessage(key, content);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to send message:', error);
