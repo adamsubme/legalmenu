@@ -15,44 +15,82 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check if secrets are configured
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.SERVER_HOST }}" ] || [ -z "${{ secrets.SERVER_SSH_KEY }}" ]; then
+            echo "::notice::Deploy secrets not configured - skipping deploy"
+            echo "SKIP_DEPLOY=true" >> $GITHUB_OUTPUT
+          else
+            echo "SKIP_DEPLOY=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
+        uses: actions/checkout@v4
 
       - name: Check for secrets
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: |
-          if grep -rE "(admin123|Mica#3000|sk-proj-)" --include="*.js" --include="*.ts" --include="*.json" dashboard/ src/ 2>/dev/null | grep -v node_modules | grep -v ".next"; then
+          # Scan for common secret patterns in all config files
+          PATTERNS=(
+            "admin123"
+            "Mica#3000"
+            "sk-proj-"
+            "ntn_[a-zA-Z0-9_-]{40,}"
+            "ghp_[a-zA-Z0-9]{36,}"
+            "AKIA[A-Z0-9]{16}"
+            "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678"
+          )
+
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yml" --include="*.yaml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"; then
+              echo "❌ Potential secret found: $pattern"
+              FOUND=1
+            fi
+          done
+
+          if [ $FOUND -eq 1 ]; then
             echo "❌ Secrets found in code! Clean before deploying."
             exit 1
           fi
           echo "✓ No secrets detected"
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: dashboard/package-lock.json
 
       - name: Install dependencies
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: npm ci --legacy-peer-deps
         working-directory: dashboard
 
       - name: Run lint
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: npm run lint
         working-directory: dashboard
 
       - name: Run type check
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: npx tsc --noEmit
         working-directory: dashboard
 
       - name: Build application
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: npm run build
         working-directory: dashboard
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
       - name: Create deployment package
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         run: |
           tar -czf deployment.tar.gz \
             --exclude='.next/BUILD_ID' \
@@ -65,6 +103,7 @@ jobs:
         working-directory: dashboard
 
       - name: Deploy via SSH
+        if: steps.check-secrets.outputs.SKIP_DEPLOY == 'false'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}

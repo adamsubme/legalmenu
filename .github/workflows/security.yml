@@ -27,23 +27,25 @@ jobs:
       - name: Scan for secrets
         run: |
           echo "🔍 Scanning for leaked secrets..."
-          
+
           # Patterns to detect
           PATTERNS=(
             "sk-proj-"
             "admin123"
+            "Mica#3000"
             "password.*=.*['\"][^'\"]{6,}"
             "api_key.*=.*['\"][^'\"]{20,}"
             "GOCSPX-"
             "ntn_[a-zA-Z0-9_-]{40,}"
             "ghp_[a-zA-Z0-9]{36,}"
             "AKIA[A-Z0-9]{16}"
+            "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678"
           )
-          
+
           for pattern in "${PATTERNS[@]}"; do
-            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example"; then
+            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"; then
               echo "❌ Potential secret found: $pattern"
-              grep -rEn "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example"
+              grep -rEn "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"
               exit 1
             fi
           done

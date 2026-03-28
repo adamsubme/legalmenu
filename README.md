@@ -13,7 +13,7 @@ Running on a Hetzner VPS. Dashboard at **lex.protocolspring.com**.
 │                        VPS (Hetzner)                        │
 │                                                             │
 │  ┌──────────────────┐    ┌──────────────────────────────┐   │
-│  │  OpenClaw Gateway │◄──►│  Mission Control (Docker)    │   │
+│  │  OpenClaw Gateway │◄──►│  Mission Control (PM2)       │   │
 │  │  (systemd native) │    │  Next.js 14 + SQLite         │   │
 │  │  port 18789       │    │  port 3000                   │   │
 │  └────────┬─────────┘    └──────────────────────────────┘   │
@@ -137,7 +137,7 @@ Supports case types: Analysis, Contract, Regulation, Procedure/Checklist, Letter
 | Component | Technology | Location |
 |---|---|---|
 | AI Gateway | OpenClaw 2026.3.13 | systemd (`openclaw-legal.service`) |
-| Dashboard | Next.js 14 + SQLite | Docker container, port 3000 |
+| Dashboard | Next.js 14 + SQLite | PM2 process, port 3000 |
 | Reverse Proxy | Caddy | HTTPS at `lex.protocolspring.com` |
 | LLM Providers | Google Gemini, Z.AI GLM, MiniMax | API |
 | Vector Store | OpenAI | 65 MiCA/ESMA/EBA documents |
@@ -175,7 +175,43 @@ Supports case types: Analysis, Contract, Regulation, Procedure/Checklist, Letter
 
 ## Deployment
 
-Dashboard runs as a Docker container on the VPS:
+### Current Setup (PM2)
+
+Dashboard runs directly on the host via PM2 (not in Docker):
+
+```bash
+# Navigate to dashboard
+cd /root/mission-control/dashboard
+
+# Install dependencies
+npm ci --legacy-peer-deps
+
+# Build
+npm run build
+
+# Start with PM2
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+Environment variables must be set in `/etc/environment.d/mission-control.conf` or via systemd:
+
+```bash
+# Example /etc/environment.d/mission-control.conf
+AGENT_API_KEY=your-agent-api-key
+MC_LOGIN_PASSWORD=your-secure-password
+AUTH_PASSWORD=your-secure-password
+OPENCLAW_GATEWAY_TOKEN=your-gateway-token
+OPENAI_API_KEY=sk-proj-your-key
+TG_BOT_LEX_TOKEN=your-telegram-bot-token    # Optional
+TG_BOT_INTAKE_TOKEN=your-intake-bot-token   # Optional
+```
+
+OpenClaw gateway runs as a native systemd service (`openclaw-legal.service`).
+
+### Docker (Alternative)
+
+A Dockerfile exists for optional Docker-based deployment. Currently **not used** in production.
 
 ```bash
 cd dashboard
@@ -195,8 +231,6 @@ docker run -d --name mission-control \
   -e SESSION_SECRET=$SESSION_SECRET \
   mission-control
 ```
-
-OpenClaw gateway runs as a native systemd service (`openclaw-legal.service`).
 
 ## License
 
