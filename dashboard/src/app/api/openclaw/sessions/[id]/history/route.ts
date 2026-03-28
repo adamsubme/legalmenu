@@ -31,7 +31,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     // Use getChatHistory with the session key
-    const history = await client.getChatHistory(session.key || id);
+    const sessionKey = (session.key as string) || id;
+    const history = await client.getChatHistory(sessionKey);
     return NextResponse.json(history);
   } catch (error) {
     console.error('Failed to get OpenClaw session history:', error);
