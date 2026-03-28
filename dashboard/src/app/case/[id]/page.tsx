@@ -584,9 +584,9 @@ export default function CaseDetailPage() {
                   {activities.map(a => (
                     <div key={a.id} className="flex gap-4 relative">
                       <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 z-10">
-                        {a.activity_type === 'status_changed' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> :
-                         a.activity_type === 'comment' ? <MessageSquare className="h-4 w-4 text-blue-400" /> :
-                         a.activity_type === 'assignment' ? <User className="h-4 w-4 text-purple-400" /> :
+                        {String(a.activity_type).includes('status') ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> :
+                         String(a.activity_type).includes('comment') ? <MessageSquare className="h-4 w-4 text-blue-400" /> :
+                         String(a.activity_type).includes('assign') ? <User className="h-4 w-4 text-purple-400" /> :
                          <Clock className="h-4 w-4 text-zinc-400" />}
                       </div>
                       <div className="flex-1 pb-4">
