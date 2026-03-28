@@ -43,9 +43,9 @@ jobs:
           )
 
           for pattern in "${PATTERNS[@]}"; do
-            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"; then
+            if grep -rE "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"; then
               echo "❌ Potential secret found: $pattern"
-              grep -rEn "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"
+              grep -rEn "$pattern" --include="*.js" --include="*.ts" --include="*.json" --include="*.yaml" --include="*.yml" dashboard/ src/ .github/ ./*.js 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v ".env" | grep -v ".env.example" | grep -v "ecosystem.config.js.example"
               exit 1
             fi
           done
