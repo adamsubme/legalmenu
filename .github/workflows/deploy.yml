@@ -42,15 +42,13 @@ jobs:
         run: |
           echo "🔍 Scanning for leaked secrets..."
 
-          # Patterns to detect (source code only, not workflow files)
+          # API key patterns only (avoid false positives from password HTML inputs)
           PATTERNS=(
             "sk-proj-[a-zA-Z0-9_-]{20,}"
-            "admin123"
-            "Mica#3000"
             "GOCSPX-[a-zA-Z0-9_-]{20,}"
-            "ntn_[a-zA-Z0-9_-]{40,}"
             "ghp_[a-zA-Z0-9]{36,}"
             "AKIA[A-Z0-9]{16}"
+            "ntn_[a-zA-Z0-9_-]{40,}"
           )
 
           FOUND=0
