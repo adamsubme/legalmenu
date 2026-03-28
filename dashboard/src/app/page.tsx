@@ -3,12 +3,15 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { AGENT_MAP, STATUS_LABELS, SUB_STATUS_LABELS, timeAgo } from '@/lib/utils';
-import { Activity, Clock, Ban, CheckCircle2, AlertTriangle, ArrowRight, Briefcase } from 'lucide-react';
+import { Activity, Clock, Ban, CheckCircle2, AlertTriangle, ArrowRight, Briefcase, Plus, UserPlus, FolderPlus } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Task, Agent } from '@/lib/types';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,8 +20,8 @@ export default function DashboardPage() {
     async function load() {
       try {
         const [tRes, aRes] = await Promise.all([
-          fetch('/api/tasks?workspace_id=default'),
-          fetch('/api/agents'),
+          fetch('/api/tasks?workspace_id=default', { credentials: 'include' }),
+          fetch('/api/agents', { credentials: 'include' }),
         ]);
         if (tRes.ok) setTasks(await tRes.json());
         if (aRes.ok) setAgents(await aRes.json());
@@ -43,7 +46,18 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-zinc-400 mt-1">Lex Legal overview — {tasks.length} total cases</p>
         </div>
-        <Link href="/cases" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300"><span>Case Board</span><ArrowRight className="h-4 w-4" /></Link>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => router.push('/clients?new=1')}>
+            <UserPlus className="h-4 w-4 mr-2" />New Client
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => router.push('/projects?new=1')}>
+            <FolderPlus className="h-4 w-4 mr-2" />New Project
+          </Button>
+          <Button size="sm" onClick={() => router.push('/cases?new=1')}>
+            <Plus className="h-4 w-4 mr-2" />New Case
+          </Button>
+          <Link href="/cases" className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 ml-2"><span>Case Board</span><ArrowRight className="h-4 w-4" /></Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
