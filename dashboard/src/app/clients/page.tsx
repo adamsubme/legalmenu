@@ -24,8 +24,8 @@ export default function ClientsPage() {
   async function loadClients() {
     try {
       const url = search ? `/clients?search=${encodeURIComponent(search)}` : '/clients';
-      const data = await api.get<ClientWithStats[]>(url);
-      setClients(data);
+      const data = await api.get<ClientWithStats[] | { items: ClientWithStats[] }>(url);
+      setClients(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }

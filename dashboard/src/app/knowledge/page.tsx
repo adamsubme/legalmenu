@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { timeAgo } from '@/lib/utils';
-import { BookOpen, Search, Upload, Plus, Trash2, Link2, FileText, Database, RefreshCw } from 'lucide-react';
+import { BookOpen, Search, Upload, Plus, Trash2, Link2, FileText, RefreshCw } from 'lucide-react';
 import type { KnowledgeEntry } from '@/lib/types';
 import { api } from '@/lib/api-client';
 

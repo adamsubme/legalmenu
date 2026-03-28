@@ -12,7 +12,7 @@ import {
   Download, ExternalLink, FileText, File, FileImage,
   FileBadge, Plus, X, ChevronDown, ChevronUp, Loader2,
 } from 'lucide-react';
-import type { TaskAttachment, AttachmentType } from '@/lib/types';
+import type { TaskAttachment } from '@/lib/types';
 import { api } from '@/lib/api-client';
 
 interface CaseDocumentsProps {

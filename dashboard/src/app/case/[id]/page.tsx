@@ -11,16 +11,16 @@ import { STATUS_LABELS, SUB_STATUS_LABELS, timeAgo, formatDate } from '@/lib/uti
 import {
   ArrowLeft, Send, Clock, User, FileText, AlertTriangle, CheckCircle2,
   Upload, Link2, StickyNote, Plus, Trash2, ExternalLink, X,
-  Bot, BookOpen, Folder, Users, Briefcase, FileCheck, MessageSquare,
-  ChevronDown, Search, Globe, Scale,
+  Bot, Folder, Users, Briefcase, FileCheck, MessageSquare,
+  ChevronDown, Search, Scale,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Task, TaskActivity, TaskAttachment, KnowledgeEntry } from '@/lib/types';
+import type { Task, TaskActivity, TaskAttachment, KnowledgeEntry, TaskStatus } from '@/lib/types';
 import { api } from '@/lib/api-client';
 
 type Tab = 'chat' | 'knowledge' | 'legal' | 'project' | 'client' | 'files' | 'timeline';
 
-type TaskExt = Task & {
+type TaskDetail = Task & {
   sub_status?: string;
   client_name?: string;
   project_name?: string;
@@ -36,7 +36,7 @@ export default function CaseDetailPage() {
   const id = params.id as string;
   
   // Data state
-  const [task, setTask] = useState<TaskExt | null>(null);
+  const [task, setTask] = useState<TaskDetail | null>(null);
   const [activities, setActivities] = useState<TaskActivity[]>([]);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
@@ -68,8 +68,8 @@ export default function CaseDetailPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [taskData, activities, attachments, knowledge] = await Promise.all([
-        api.get<TaskExt>(`/tasks/${id}`),
+o      const [taskData, activities, attachments, knowledge] = await Promise.all([
+        api.get<TaskDetail>(`/tasks/${id}`),
         api.get<TaskActivity[]>(`/tasks/${id}/activities`),
         api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
         api.get<KnowledgeEntry[]>(`/knowledge?scope=task&scope_id=${id}`),
